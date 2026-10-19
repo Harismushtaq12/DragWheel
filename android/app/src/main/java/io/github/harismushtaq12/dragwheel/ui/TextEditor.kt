@@ -19,19 +19,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.harismushtaq12.dragwheel.core.TextDoc
 
-private const val EDIT_LIMIT = 300_000
 
 /** Edit the words, then save as PDF, Word or TXT. */
 @Composable
 fun TextEditorScreen(
     doc: TextDoc,
+    state: TextEditState,
     onBack: () -> Unit,
     onSave: (name: String, text: String, format: String) -> Unit,
 ) {
-    val tooLong = doc.text.length > EDIT_LIMIT
-    var text by remember(doc) { mutableStateOf(if (tooLong) doc.text.take(EDIT_LIMIT) else doc.text) }
-    var name by remember(doc) { mutableStateOf(doc.baseName) }
-    var format by remember { mutableStateOf("pdf") }
+    val tooLong = state.tooLong
+    var text by state::text
+    var name by state::name
+    var format by state::format
     val words = remember(text) { text.split(Regex("\\s+")).count { it.isNotBlank() } }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
@@ -43,7 +43,7 @@ fun TextEditorScreen(
 
     EditorScaffold(
         title = "Edit text",
-        subtitle = "$words words" + if (tooLong) "  (very long: only the first part is shown)" else "",
+        subtitle = "$words words" + if (tooLong) "  (very long: only the first 300,000 letters can be edited and saved)" else "",
         onBack = onBack,
         primary = "Preview result",
         primaryEnabled = name.isNotBlank(),

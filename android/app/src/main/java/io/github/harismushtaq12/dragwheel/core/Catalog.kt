@@ -5,7 +5,10 @@ import io.github.harismushtaq12.dragwheel.ops.ArchiveOps
 import io.github.harismushtaq12.dragwheel.ops.DocOps
 import io.github.harismushtaq12.dragwheel.ops.ImageOps
 import io.github.harismushtaq12.dragwheel.ops.MediaOps
+import io.github.harismushtaq12.dragwheel.ops.PageEdit
 import io.github.harismushtaq12.dragwheel.ops.PdfOps
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlin.math.roundToInt
 
 /**
@@ -74,7 +77,10 @@ object Catalog {
         options: List<OptionSpec> = emptyList(),
         work: suspend (Context, InputFile, Options) -> List<SavedFile>,
     ) = WheelAction(title, hint, description, button, done, options) { ctx, files, opts ->
-        ActionResult(outputs = files.flatMap { work(ctx, it, opts) })
+        ActionResult(outputs = files.flatMap {
+            coroutineContext.ensureActive() // stop between files if the user cancelled
+            work(ctx, it, opts)
+        })
     }
 
     private fun editor(title: String, hint: String, description: String, editor: Editor) =
@@ -100,7 +106,7 @@ object Catalog {
             "Convert to JPG", "Converted to JPG", listOf(quality(92f)),
         ) { c, f, o -> listOf(ImageOps.convert(c, f, "jpg", o.num("quality", 92f).roundToInt())) }
         list += perFile(
-            "PNG", "lossless", "Makes a PNG copy. PNG keeps every pixel exactly and supports transparency, but files are larger.",
+            "PNG", "lossless", "Makes a PNG copy. PNG keeps full detail and supports transparency, but files are larger. Extremely large photos may be reduced to fit the phone's memory.",
             "Convert to PNG", "Converted to PNG",
         ) { c, f, _ -> listOf(ImageOps.convert(c, f, "png")) }
         list += perFile(
@@ -183,9 +189,9 @@ object Catalog {
         ) { c, f, o -> listOf(MediaOps.trim(c, f, o.range("range") ?: throw IllegalArgumentException("Choose start and end"), isAudio = false)) }
         list += perFile(
             "Compress", "smaller video",
-            "Makes the video file smaller for sending. Videos taller than the size you choose are scaled down. Small videos are never made bigger.",
+            "Makes the video file smaller for sending. It is saved again at a lower bitrate, and big videos are scaled down to the size you choose. Small videos are never made bigger.",
             "Compress video", "Compressed",
-            listOf(OptionSpec.Choice("height", "Size", listOf("1080" to "1080p", "720" to "720p", "480" to "480p"), "720")),
+            listOf(OptionSpec.Choice("height", "Size", listOf("1080" to "1080p (sharp)", "720" to "720p (balanced)", "480" to "480p (smallest)"), "720")),
         ) { c, f, o -> listOf(MediaOps.compress(c, f, o.str("height", "720").toInt())) }
         list += perFile(
             "Mute", "remove sound", "Makes a copy of the video with no sound.", "Remove sound", "Muted",
@@ -242,7 +248,9 @@ object Catalog {
                 pagesOption,
             ),
         ) { c, f, o ->
-            PdfOps.toImages(c, f, png = o.str("format", "jpg") == "png", dpi = o.str("dpi", "150").toInt()) { n -> parsePages(o.str("pages"), n) }
+            PdfOps.toImages(c, f, png = o.str("format", "jpg") == "png", dpi = o.str("dpi", "150").toInt()) { n ->
+                parsePages(o.str("pages"), n).map { PageEdit(it) }
+            }
         }
         if (single) list += WheelAction(
             "Text", "copy the words",

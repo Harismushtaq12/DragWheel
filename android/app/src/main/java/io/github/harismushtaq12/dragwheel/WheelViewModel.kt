@@ -25,6 +25,9 @@ import io.github.harismushtaq12.dragwheel.core.WheelAction
 import io.github.harismushtaq12.dragwheel.ops.DocOps
 import io.github.harismushtaq12.dragwheel.ops.MediaOps
 import io.github.harismushtaq12.dragwheel.ops.PdfOps
+import io.github.harismushtaq12.dragwheel.ui.ImageEditState
+import io.github.harismushtaq12.dragwheel.ui.PagesEditState
+import io.github.harismushtaq12.dragwheel.ui.TextEditState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -35,9 +38,15 @@ sealed interface Screen {
     data object Home : Screen
     data object Wheel : Screen
     data class View(val file: InputFile) : Screen
-    data class ImageEdit(val file: InputFile) : Screen
-    data class PdfPages(val file: InputFile) : Screen
-    data class TextEdit(val doc: TextDoc) : Screen
+    data class ImageEdit(val file: InputFile) : Screen {
+        val state = ImageEditState(file)
+    }
+    data class PdfPages(val file: InputFile) : Screen {
+        val state = PagesEditState()
+    }
+    data class TextEdit(val doc: TextDoc) : Screen {
+        val state = TextEditState(doc)
+    }
     data class Result(val title: String, val result: ActionResult, val saved: List<SavedFile>? = null) : Screen
 }
 
@@ -95,7 +104,10 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
     private fun loadInfo(f: InputFile): FileInfo = runCatching {
         when (Catalog.kindOf(f)) {
             Catalog.Kind.VIDEO, Catalog.Kind.AUDIO -> MediaOps.info(context, f)
-            Catalog.Kind.PDF -> FileInfo(size = f.size, pages = runCatching { PdfOps.pageCount(context, f) }.getOrNull())
+            Catalog.Kind.PDF -> FileInfo(
+                size = f.size,
+                pages = runCatching { PdfOps.openRenderer(Storage.localCopy(context, f)).use { it.pageCount } }.getOrNull(),
+            )
             else -> FileInfo(size = f.size)
         }
     }.getOrElse { FileInfo(size = f.size) }
@@ -126,6 +138,7 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (working != null) {
             job?.cancel()
+            job = null
             working = null
             return true
         }
@@ -188,14 +201,19 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
         working = label
         error = null
         job = viewModelScope.launch {
+            val me = coroutineContext[Job]
             try {
                 withContext(Dispatchers.IO) { block() }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // user pressed back
+                // user pressed Cancel or Back
             } catch (e: Throwable) {
-                error = friendly(e)
+                if (job === me) error = friendly(e)
             } finally {
-                working = null
+                // A cancelled job that finishes late must not hide a newer job's progress.
+                if (job === me) {
+                    working = null
+                    job = null
+                }
             }
         }
     }
@@ -220,7 +238,10 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Use a result as the new input, to keep working on it. */
     fun continueWith(output: SavedFile) {
-        setUris(listOf(output.uri))
+        viewModelScope.launch {
+            val uri = withContext(Dispatchers.IO) { runCatching { Storage.keepAsInput(context, output) }.getOrNull() }
+            if (uri != null) setUris(listOf(uri)) else error = "Could not open the result."
+        }
     }
 
     fun dismissError() {

@@ -53,7 +53,7 @@ fun ActionSheet(
     onRun: (Options) -> Unit,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val values = remember(action) {
+    val values = remember(action, info?.durationMs) {
         mutableStateMapOf<String, Any>().apply {
             for (o in action.options) when (o) {
                 is OptionSpec.Choice -> put(o.key, o.default)
@@ -124,7 +124,11 @@ fun ActionSheet(
                     is OptionSpec.Range -> {
                         val total = info?.durationMs
                         if (total == null || total <= 0) {
-                            Text("Reading the length of this file…", color = Palette.Muted, fontSize = 14.sp)
+                            Text(
+                                if (info == null) "Reading the length of this file…"
+                                else "Could not read the length of this file, so it cannot be trimmed.",
+                                color = Palette.Muted, fontSize = 14.sp,
+                            )
                         } else {
                             val r = values[o.key] as? TimeRange ?: TimeRange(0, total)
                             Column {

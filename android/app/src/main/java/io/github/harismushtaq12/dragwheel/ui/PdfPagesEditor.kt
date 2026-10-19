@@ -40,14 +40,15 @@ import io.github.harismushtaq12.dragwheel.ops.PageEdit
 @Composable
 fun PdfPagesScreen(
     file: InputFile,
+    state: PagesEditState,
     onBack: () -> Unit,
     onSavePdf: (List<PageEdit>) -> Unit,
-    onImages: (pages: List<Int>, png: Boolean) -> Unit,
+    onImages: (pages: List<PageEdit>, png: Boolean) -> Unit,
 ) {
     val sourceState = rememberPdfSource(file)
-    val pages = remember { mutableStateListOf<PageEdit>() }
-    val selected = remember { mutableStateListOf<Int>() } // original page numbers (0-based)
-    var png by remember { mutableStateOf(false) }
+    val pages = state.pages
+    val selected = state.selected
+    var png by state::png
     var note by remember { mutableStateOf<String?>(null) }
 
     val source = (sourceState as? Load.Ready)?.value
@@ -67,7 +68,8 @@ fun PdfPagesScreen(
         onPrimary = { onSavePdf(pages.toList()) },
         secondary = if (selected.isEmpty()) "All to pictures" else "${selected.size} to pictures",
         onSecondary = {
-            val chosen = if (selected.isEmpty()) pages.map { it.source } else pages.map { it.source }.filter { it in selected }
+            // Keeps the order and the turns the user made.
+            val chosen = if (selected.isEmpty()) pages.toList() else pages.filter { it.source in selected }
             onImages(chosen, png)
         },
     ) {

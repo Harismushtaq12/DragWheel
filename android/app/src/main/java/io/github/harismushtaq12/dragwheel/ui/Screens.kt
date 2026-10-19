@@ -77,13 +77,14 @@ fun DragWheelApp(vm: WheelViewModel, outside: Outside) {
             is Screen.Home -> HomeScreen(outside::chooseFiles)
             is Screen.Wheel -> WheelScreen(vm)
             is Screen.View -> ViewScreen(s.file, onBack = { vm.back() }, outside = outside)
-            is Screen.ImageEdit -> ImageEditorScreen(s.file, onBack = { vm.back() }) { edit, ext, quality ->
+            is Screen.ImageEdit -> ImageEditorScreen(s.file, s.state, onBack = { vm.back() }) { edit, ext, quality ->
                 vm.runEditor("Applying your changes", "Edited photo") { c ->
                     ActionResult(outputs = listOf(ImageOps.edit(c, s.file, edit, ext, quality)))
                 }
             }
             is Screen.PdfPages -> PdfPagesScreen(
                 s.file,
+                s.state,
                 onBack = { vm.back() },
                 onSavePdf = { pages ->
                     vm.runEditor("Making the new PDF", "New PDF") { c ->
@@ -96,7 +97,7 @@ fun DragWheelApp(vm: WheelViewModel, outside: Outside) {
                     }
                 },
             )
-            is Screen.TextEdit -> TextEditorScreen(s.doc, onBack = { vm.back() }) { name, text, format ->
+            is Screen.TextEdit -> TextEditorScreen(s.doc, s.state, onBack = { vm.back() }) { name, text, format ->
                 vm.runEditor("Making your file", "Document ready") { c ->
                     ActionResult(
                         outputs = listOf(
@@ -380,7 +381,9 @@ private fun ResultScreen(r: Screen.Result, vm: WheelViewModel, outside: Outside)
                 val total = outputs.sumOf { it.file?.length() ?: 0L }
                 append(formatSize(total))
                 val before = vm.files.sumOf { it.size.coerceAtLeast(0) }
-                if (before > 0 && total > 0 && vm.files.size == 1 && outputs.size == 1) {
+                val sameKind = vm.files.size == 1 && outputs.size == 1 &&
+                    Catalog.kindOf(vm.files[0]) == Catalog.kindOf(outputs[0].asInput())
+                if (before > 0 && total > 0 && sameKind) {
                     val pct = (total * 100 / before).toInt()
                     append(if (pct < 100) ", ${100 - pct}% smaller than the original" else if (pct > 100) ", ${pct - 100}% bigger than the original" else "")
                 }

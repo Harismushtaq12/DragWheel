@@ -86,7 +86,8 @@ object Storage {
     fun localCopy(context: Context, file: InputFile): File {
         file.uri.path?.let { p -> if (file.uri.scheme == "file") return File(p) }
         val dir = File(context.cacheDir, "view").apply { mkdirs() }
-        val key = (file.uri.toString().hashCode().toLong() and 0xffffffffL).toString(16)
+        val key = ((file.uri.toString() + file.size).hashCode().toLong() and 0xffffffffL).toString(16)
+        dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(8)?.forEach { it.delete() }
         val target = File(dir, "$key.${file.ext.ifEmpty { "bin" }}")
         if (!target.exists() || target.length() == 0L) {
             val temp = File(dir, "$key.part")
@@ -94,6 +95,16 @@ object Storage {
             temp.renameTo(target)
         }
         return target
+    }
+
+    /** Copies a result to a folder that is never cleaned up automatically, so it can be the next input. */
+    fun keepAsInput(context: Context, out: SavedFile): Uri {
+        val source = out.file ?: return out.uri
+        val dir = File(context.cacheDir, "input").apply { mkdirs() }
+        dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(5)?.forEach { it.deleteRecursively() }
+        val target = unique(dir, out.name)
+        source.copyTo(target)
+        return uriFor(context, target)
     }
 
     /** Copies results to Downloads/DragWheel. Returns the public copies. */

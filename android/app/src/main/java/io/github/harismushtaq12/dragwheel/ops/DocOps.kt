@@ -35,9 +35,14 @@ object DocOps {
         Storage.open(context, f).use { input ->
             if (isDocx(f)) readDocx(input)
             else input.bufferedReader().use { r ->
-                val buf = CharArray(MAX_CHARS)
-                val n = r.read(buf)
-                if (n <= 0) "" else String(buf, 0, n)
+                val sb = StringBuilder()
+                val buf = CharArray(8192)
+                while (sb.length < MAX_CHARS) {
+                    val n = r.read(buf)
+                    if (n < 0) break
+                    sb.append(buf, 0, n)
+                }
+                sb.toString()
             }
         }
 
@@ -52,17 +57,23 @@ object DocOps {
                 parser.setInput(zip, "UTF-8")
                 val sb = StringBuilder()
                 var inText = false
+                var inTabStops = false   // <w:tabs> lists tab positions, not real tabs
+                var fallback = 0         // text boxes are stored twice; skip the copy in mc:Fallback
                 while (true) {
                     when (parser.next()) {
                         XmlPullParser.END_DOCUMENT -> break
                         XmlPullParser.START_TAG -> when (parser.name) {
-                            "w:t" -> inText = true
-                            "w:tab" -> sb.append('\t')
-                            "w:br", "w:cr" -> sb.append('\n')
+                            "mc:Fallback" -> fallback++
+                            "w:tabs" -> inTabStops = true
+                            "w:t" -> inText = fallback == 0
+                            "w:tab" -> if (!inTabStops && fallback == 0) sb.append('\t')
+                            "w:br", "w:cr" -> if (fallback == 0) sb.append('\n')
                         }
                         XmlPullParser.END_TAG -> when (parser.name) {
+                            "mc:Fallback" -> fallback = (fallback - 1).coerceAtLeast(0)
+                            "w:tabs" -> inTabStops = false
                             "w:t" -> inText = false
-                            "w:p" -> sb.append('\n')
+                            "w:p" -> if (fallback == 0) sb.append('\n')
                         }
                         XmlPullParser.TEXT -> if (inText) sb.append(parser.text)
                     }

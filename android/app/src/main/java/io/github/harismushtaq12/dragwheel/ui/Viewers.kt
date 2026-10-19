@@ -56,7 +56,9 @@ import io.github.harismushtaq12.dragwheel.core.formatSize
 import io.github.harismushtaq12.dragwheel.ops.ArchiveOps
 import io.github.harismushtaq12.dragwheel.ops.DocOps
 import io.github.harismushtaq12.dragwheel.ops.ImageOps
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -164,14 +166,17 @@ class PdfSource(file: java.io.File) {
         }
     }
 
-    fun close() = runCatching { renderer.close() }
+    /** Waits for any page being drawn, then closes. */
+    suspend fun close() {
+        lock.withLock { withContext(Dispatchers.IO) { runCatching { renderer.close() } } }
+    }
 }
 
 @Composable
 fun rememberPdfSource(file: InputFile): Load<PdfSource> {
     val context = LocalContext.current
     val state = produceState<Load<PdfSource>>(Load.Busy, file.uri) {
-        value = withContext(Dispatchers.IO) {
+        val made = withContext(Dispatchers.IO) {
             try {
                 Load.Ready(PdfSource(Storage.localCopy(context, file)))
             } catch (e: SecurityException) {
@@ -180,9 +185,11 @@ fun rememberPdfSource(file: InputFile): Load<PdfSource> {
                 Load.Failed("Cannot open this PDF.")
             }
         }
+        value = made
+        awaitDispose {
+            (made as? Load.Ready)?.value?.let { source -> CoroutineScope(Dispatchers.IO).launch { source.close() } }
+        }
     }
-    val source = (state.value as? Load.Ready)?.value
-    DisposableEffect(source) { onDispose { source?.close() } }
     return state.value
 }
 
@@ -237,6 +244,7 @@ private fun MediaView(file: InputFile, isAudio: Boolean, modifier: Modifier) {
             factory = { ctx ->
                 VideoView(ctx).apply {
                     val controller = MediaController(ctx)
+                    tag = controller
                     controller.setAnchorView(this)
                     setMediaController(controller)
                     setVideoURI(file.uri)
@@ -247,7 +255,10 @@ private fun MediaView(file: InputFile, isAudio: Boolean, modifier: Modifier) {
                     requestFocus()
                 }
             },
-            onRelease = { it.stopPlayback() },
+            onRelease = { view ->
+                (view.tag as? MediaController)?.hide()
+                view.stopPlayback()
+            },
             modifier = if (isAudio) Modifier.fillMaxWidth().height(72.dp) else Modifier.fillMaxWidth().weight(1f),
         )
     }

@@ -54,22 +54,27 @@ private enum class Grip { NONE, MOVE, TL, TR, BL, BR }
 @Composable
 fun ImageEditorScreen(
     file: InputFile,
+    state: ImageEditState,
     onBack: () -> Unit,
     onExport: (ImageEdit, ext: String, quality: Int) -> Unit,
 ) {
     val context = LocalContext.current
-    val original by produceState<Bitmap?>(null, file.uri) {
-        value = withContext(Dispatchers.IO) { runCatching { ImageOps.load(context, file, maxSide = 1600) }.getOrNull() }
+    val loaded by produceState<Load<Bitmap>>(Load.Busy, file.uri) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { Load.Ready(ImageOps.load(context, file, maxSide = 1600)) }
+                .getOrElse { Load.Failed("Cannot open this picture.") }
+        }
     }
+    val original = (loaded as? Load.Ready)?.value
 
-    var turns by remember { mutableIntStateOf(0) }
-    var flip by remember { mutableStateOf(false) }
-    var crop by remember { mutableStateOf(Rect(0f, 0f, 1f, 1f)) }
-    var brightness by remember { mutableFloatStateOf(0f) }
-    var contrast by remember { mutableFloatStateOf(1f) }
-    var saturation by remember { mutableFloatStateOf(1f) }
-    var tab by remember { mutableIntStateOf(0) }
-    var format by remember { mutableStateOf(ImageOps.sameOrJpg(file)) }
+    var turns by state::turns
+    var flip by state::flip
+    var crop by state::crop
+    var brightness by state::brightness
+    var contrast by state::contrast
+    var saturation by state::saturation
+    var tab by state::tab
+    var format by state::format
 
     val shown = remember(original, turns, flip) {
         original?.let { ImageOps.transform(it.copy(Bitmap.Config.ARGB_8888, false), turns, flip).asImageBitmap() }
@@ -99,7 +104,7 @@ fun ImageEditorScreen(
         ) {
             val img = shown
             if (img == null) {
-                Message(if (original == null) "Loading…" else "Cannot open this picture.")
+                Message(if (loaded is Load.Failed) "Cannot open this picture." else "Loading…")
                 return@BoxWithConstraints
             }
             val boxW = constraints.maxWidth.toFloat()

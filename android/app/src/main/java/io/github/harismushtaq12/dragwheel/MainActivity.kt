@@ -88,6 +88,10 @@ class MainActivity : ComponentActivity(), Outside {
 
     override fun share(files: List<SavedFile>) {
         if (files.isEmpty()) return
+        if (files.size > 100) {
+            Toast.makeText(this, "Too many files to share at once. Save them, or make a zip first.", Toast.LENGTH_LONG).show()
+            return
+        }
         val send = if (files.size == 1) {
             Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, files[0].uri).setType(files[0].mime)
         } else {

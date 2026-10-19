@@ -55,6 +55,13 @@ object ImageOps {
         }
     }
 
+    /** Full size when memory allows; falls back to a smaller size on very large photos. */
+    fun loadLarge(context: Context, file: InputFile): Bitmap = try {
+        load(context, file, maxSide = 8192)
+    } catch (e: OutOfMemoryError) {
+        load(context, file, maxSide = 4096)
+    }
+
     private fun formatFor(ext: String): Bitmap.CompressFormat = when (ext) {
         "png" -> Bitmap.CompressFormat.PNG
         "webp" -> if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else @Suppress("DEPRECATION") Bitmap.CompressFormat.WEBP
@@ -88,7 +95,7 @@ object ImageOps {
     }
 
     fun convert(context: Context, file: InputFile, ext: String, quality: Int = 92): SavedFile =
-        save(context, load(context, file), file.baseName, ext, quality = quality)
+        save(context, loadLarge(context, file), file.baseName, ext, quality = quality)
 
     fun compress(context: Context, file: InputFile, quality: Int, maxSide: Int): SavedFile {
         val bitmap = load(context, file, maxSide = maxSide)
@@ -107,23 +114,23 @@ object ImageOps {
     }
 
     fun rotate(context: Context, file: InputFile): SavedFile {
-        val bitmap = load(context, file)
+        val bitmap = loadLarge(context, file)
         val rotated = transform(bitmap, 1, false)
         return save(context, rotated, file.baseName, sameOrJpg(file), " rotated", quality = 92)
     }
 
     fun grayscale(context: Context, file: InputFile): SavedFile {
-        val out = applyColor(load(context, file), 0f, 1f, 0f)
+        val out = applyColor(loadLarge(context, file), 0f, 1f, 0f)
         return save(context, out, file.baseName, sameOrJpg(file), " bw", quality = 92)
     }
 
     /** Re-encoding writes only pixels: EXIF, GPS location and camera details are gone. */
     fun clean(context: Context, file: InputFile): SavedFile =
-        save(context, load(context, file), file.baseName, sameOrJpg(file), " clean", quality = 92)
+        save(context, loadLarge(context, file), file.baseName, sameOrJpg(file), " clean", quality = 92)
 
     /** Applies the photo editor's changes to the full picture. */
     fun edit(context: Context, file: InputFile, e: ImageEdit, ext: String, quality: Int): SavedFile {
-        var bitmap = transform(load(context, file), e.quarterTurns, e.flip)
+        var bitmap = transform(loadLarge(context, file), e.quarterTurns, e.flip)
         val l = (e.cropLeft.coerceIn(0f, 1f) * bitmap.width).roundToInt()
         val t = (e.cropTop.coerceIn(0f, 1f) * bitmap.height).roundToInt()
         val r = (e.cropRight.coerceIn(0f, 1f) * bitmap.width).roundToInt()

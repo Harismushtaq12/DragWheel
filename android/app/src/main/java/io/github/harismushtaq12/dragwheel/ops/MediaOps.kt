@@ -13,6 +13,8 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
@@ -42,6 +44,7 @@ object MediaOps {
         removeVideo: Boolean = false,
         videoEffects: List<Effect> = emptyList(),
         clip: TimeRange? = null,
+        videoBitrate: Int? = null,
     ): SavedFile {
         val temp = File(context.cacheDir, "export-${System.nanoTime()}.mp4")
         try {
@@ -51,6 +54,14 @@ object MediaOps {
                     val builder = Transformer.Builder(context)
                     if (!removeVideo) builder.setVideoMimeType(MimeTypes.VIDEO_H264)
                     if (!removeAudio) builder.setAudioMimeType(MimeTypes.AUDIO_AAC)
+                    if (videoBitrate != null) {
+                        // Asking for a bitrate also forces a real re-encode, so the file really gets smaller.
+                        builder.setEncoderFactory(
+                            DefaultEncoderFactory.Builder(context)
+                                .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(videoBitrate).build())
+                                .build()
+                        )
+                    }
                     val transformer = builder.addListener(object : Transformer.Listener {
                         override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                             if (cont.isActive) cont.resume(Unit)
@@ -89,11 +100,25 @@ object MediaOps {
     suspend fun toMp4(context: Context, file: InputFile) =
         export(context, file, "${file.baseName}.mp4")
 
-    /** Re-encodes at a lower bitrate and scales down to [maxHeight], never up. */
-    suspend fun compress(context: Context, file: InputFile, maxHeight: Int): SavedFile {
-        val effects = if (info(context, file).height?.let { it > maxHeight } == true)
-            listOf<Effect>(Presentation.createForHeight(maxHeight)) else emptyList()
-        return export(context, file, "${file.baseName} ${maxHeight}p.mp4", videoEffects = effects)
+    /**
+     * Re-encodes at a lower bitrate and scales the short side down to [size] (480, 720, 1080), never up.
+     * Works for both wide and tall (phone) videos.
+     */
+    suspend fun compress(context: Context, file: InputFile, size: Int): SavedFile {
+        val i = info(context, file)
+        val w = i.width ?: 0
+        val h = i.height ?: 0
+        val effects = mutableListOf<Effect>()
+        if (w > 0 && h > 0 && minOf(w, h) > size) {
+            effects += if (w >= h) Presentation.createForHeight(size)
+            else Presentation.createForWidthAndHeight(size, (size.toLong() * h / w).toInt(), Presentation.LAYOUT_SCALE_TO_FIT)
+        }
+        val bitrate = when {
+            size >= 1080 -> 5_000_000
+            size >= 720 -> 2_500_000
+            else -> 1_200_000
+        }
+        return export(context, file, "${file.baseName} ${size}p.mp4", videoEffects = effects, videoBitrate = bitrate)
     }
 
     suspend fun mute(context: Context, file: InputFile) =

@@ -136,11 +136,11 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
         stack += Screen.Home
     }
 
-    fun setMode(m: Mode) {
+    fun chooseMode(m: Mode) {
         if (working == null) mode = m
     }
 
-    fun nextMode() = setMode(Mode.entries[(mode.ordinal + 1) % Mode.entries.size])
+    fun nextMode() = chooseMode(Mode.entries[(mode.ordinal + 1) % Mode.entries.size])
 
     // ---------- Navigation ----------
 

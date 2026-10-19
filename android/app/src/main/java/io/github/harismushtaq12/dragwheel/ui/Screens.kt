@@ -246,7 +246,7 @@ private fun WheelScreen(vm: WheelViewModel) {
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            for (m in Mode.entries) Pill(m.label, vm.mode == m) { vm.setMode(m) }
+            for (m in Mode.entries) Pill(m.label, vm.mode == m) { vm.chooseMode(m) }
         }
         Text(
             if (vm.actions.isEmpty()) "Nothing to ${vm.mode.label.lowercase()} for this file. Try another ring."

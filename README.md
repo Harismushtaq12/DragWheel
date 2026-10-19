@@ -37,14 +37,17 @@ The wheel shows only what fits the file you are holding. On Windows, rest on the
 
 ### Android
 
+Every file can be **viewed** first: zoom photos, scroll all PDF pages, play video and audio, read documents, see what is inside a zip. Every action **explains itself** and shows its options before it runs. Results open in a **preview**, and nothing is saved until you tap **Save to Downloads** (or Share).
+
 | File | Convert | Tools |
 |---|---|---|
-| Image | JPG, PNG, WebP, PDF | Compress, Half size, Rotate, Grayscale, Remove metadata, Read QR code |
-| PDF | PNG or JPG pages, Merge (2+ PDFs) | Split, Reverse, Rotate |
-| Video | MP4, Audio only (M4A), First frame | Compress (720p), Mute, Rotate |
-| Audio | M4A | Zip, SHA-256 |
-| ZIP | Unzip | SHA-256 |
-| Any file | Zip | SHA-256 |
+| Image | View, Edit (crop, turn, flip, brightness, contrast, colour), JPG, PNG, WebP, PDF | Compress, Resize, Rotate, Grayscale, Remove hidden details, Read QR code |
+| PDF | View, Pages (pick, turn, delete, reorder, pages to pictures), Pictures (all or chosen pages), Text, Merge (2+ PDFs) | Split, Rotate, Reverse, Lock with password, Unlock |
+| Word / text | View, Edit text, PDF, TXT, Word | Zip, fingerprint |
+| Video | View, MP4, Sound only (M4A), First picture | Trim, Compress (1080p/720p/480p), Mute, Rotate |
+| Audio | View, M4A | Trim |
+| ZIP | View contents, Unzip | Fingerprint |
+| Any file | Zip | Fingerprint (SHA-256) |
 
 Android uses the phone's own video encoders, so it needs no extra downloads.
 

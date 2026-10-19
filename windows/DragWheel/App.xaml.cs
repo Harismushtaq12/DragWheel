@@ -44,7 +44,7 @@ namespace DragWheel
 
             DispatcherUnhandledException += OnUnhandledException;
             // PDFsharp draws page numbers and watermarks with the fonts installed in Windows.
-            GlobalFontSettings.UseWindowsFontsUnderWindows = true;
+            GlobalFontSettings.FontResolver = new Tools.WindowsFontResolver();
 
             _tray = new TrayIcon(OpenMainWindow, ChooseFiles);
             _wheel = new WheelWindow();

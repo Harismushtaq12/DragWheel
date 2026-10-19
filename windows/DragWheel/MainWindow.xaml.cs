@@ -60,7 +60,9 @@ namespace DragWheel
                 }
             };
 
-            History.Changed += () => Dispatcher.InvokeAsync(LoadRecent);
+            Action onHistory = () => Dispatcher.InvokeAsync(LoadRecent);
+            History.Changed += onHistory;
+            Closed += (_, _) => History.Changed -= onHistory;
             LoadRecent();
             LoadSettings();
         }

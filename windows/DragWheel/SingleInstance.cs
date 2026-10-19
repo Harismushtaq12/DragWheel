@@ -21,7 +21,7 @@ namespace DragWheel
                 // Let the running copy come to the front (it needs our permission to take focus).
                 NativeMethods.AllowSetForegroundWindow(NativeMethods.ASFW_ANY);
                 using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
-                client.Connect(2000);
+                client.Connect(10000); // the running copy may be busy for a moment
                 using var writer = new StreamWriter(client);
                 foreach (var l in lines) writer.WriteLine(l);
                 writer.Flush();

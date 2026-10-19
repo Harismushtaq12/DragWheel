@@ -46,11 +46,11 @@ namespace DragWheel.Tools
                 switch (family)
                 {
                     case Family.Word when Office.HasWord:
-                        int? word = ext switch { "pdf" => 17, "docx" => 16, "rtf" => 6, "txt" => 7, "html" => 10, "doc" => 0, _ => null };
+                        int? word = ext switch { "pdf" => 17, "docx" => 16, "rtf" => 6, "txt" => 2, "html" => 10, "doc" => 0, _ => null };
                         if (word != null) { await Office.Word(path, output, word.Value); return; }
                         break;
                     case Family.Sheet when Office.HasExcel:
-                        int? excel = ext switch { "pdf" => -1, "xlsx" => 51, "csv" => 6, "xls" => 56, _ => null };
+                        int? excel = ext switch { "pdf" => -1, "xlsx" => 51, "csv" => 62, "xls" => 56, _ => null };
                         if (excel != null) { await Office.Excel(path, output, excel.Value); return; }
                         break;
                     case Family.Slides when Office.HasPowerPoint:

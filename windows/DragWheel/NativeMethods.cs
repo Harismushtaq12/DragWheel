@@ -48,6 +48,9 @@ namespace DragWheel
         public static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
+        public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+        [DllImport("user32.dll")]
         public static extern bool GetCursorPos(out POINT point);
 
         public const int GWL_EXSTYLE = -20;

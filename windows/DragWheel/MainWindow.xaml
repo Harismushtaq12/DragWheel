@@ -149,7 +149,7 @@
                 <TextBlock Text="Ways to open the wheel" FontSize="16" FontWeight="SemiBold" Margin="0,4,0,4"/>
                 <CheckBox x:Name="ShiftDrag" Content="Hold Shift while dragging a file" Click="OnSetting"/>
                 <CheckBox x:Name="ExplorerMenu" Content="Right-click menu in File Explorer: Convert with DragWheel" Click="OnSetting"/>
-                <CheckBox x:Name="SendTo" Content="Right-click, Send to, DragWheel (good for many files)" Click="OnSetting"/>
+                <CheckBox x:Name="SendTo" Content="Right-click, Send to, DragWheel (best for more than 15 files)" Click="OnSetting"/>
                 <CheckBox x:Name="StartWithWindows" Content="Start DragWheel when Windows starts" Click="OnSetting"/>
                 <TextBlock Foreground="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"
                            Text="On Windows 11 the right-click entry is under Show more options."/>

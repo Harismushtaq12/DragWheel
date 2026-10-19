@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -62,6 +63,14 @@ namespace DragWheel
                 result = box is PasswordBox pb ? pb.Password : ((TextBox)box).Text;
                 window.DialogResult = true;
             };
+            window.SourceInitialized += (_, _) =>
+            {
+                // Windows only lets the front app take focus; a tap of Alt lets this dialog come forward.
+                NativeMethods.keybd_event(0x12, 0, 0, UIntPtr.Zero);
+                NativeMethods.keybd_event(0x12, 0, 2, UIntPtr.Zero);
+                NativeMethods.SetForegroundWindow(new System.Windows.Interop.WindowInteropHelper(window).Handle);
+            };
+            window.Topmost = true;
             window.Loaded += (_, _) => { box.Focus(); Keyboard.Focus(box); window.Activate(); };
             return window.ShowDialog() == true ? result : null;
         }

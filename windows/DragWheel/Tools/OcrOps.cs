@@ -22,14 +22,8 @@ namespace DragWheel.Tools
 
         private static async Task<string> Read(OcrEngine engine, byte[] picture)
         {
-            using var ras = new InMemoryRandomAccessStream();
-            using (var s = ras.AsStreamForWrite())
-            {
-                await s.WriteAsync(picture);
-                await s.FlushAsync();
-            }
-            ras.Seek(0);
-            var decoder = await BitmapDecoder.CreateAsync(ras);
+            using var stream = new MemoryStream(picture);
+            var decoder = await BitmapDecoder.CreateAsync(stream.AsRandomAccessStream());
             using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
             var result = await engine.RecognizeAsync(bitmap);
             return string.Join(Environment.NewLine, result.Lines.Select(l => l.Text));

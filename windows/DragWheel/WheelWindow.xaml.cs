@@ -62,6 +62,10 @@ namespace DragWheel
         /// The wheel takes focus and works with mouse clicks and the keyboard.
         /// </summary>
         private bool _clickMode;
+        private bool _pressed; // the press started on the wheel (not the menu click that opened it)
+
+        public bool IsClickOpen => _clickMode && _shown;
+        public string[] Files => _files;
 
         private readonly List<Path> _segments = new();
         private readonly List<TextBlock> _titles = new();
@@ -96,8 +100,10 @@ namespace DragWheel
             };
 
             SourceInitialized += (_, _) => SetNoActivate(true);
+            new WindowInteropHelper(this).EnsureHandle(); // so the style is set before the first Show
 
             MouseMove += OnMouseMoveClick;
+            MouseLeftButtonDown += (_, _) => _pressed = true;
             MouseLeftButtonUp += OnMouseUpClick;
             PreviewKeyDown += OnKey;
             Deactivated += (_, _) => { if (_clickMode) HideWheel(); };
@@ -171,7 +177,9 @@ namespace DragWheel
             Root.BeginAnimation(OpacityProperty, null);
             Root.Opacity = 1;
             SetNoActivate(false);
+            _pressed = false;
             Show();
+            SetNoActivate(false);
             _shown = true;
             PlaceAtTarget();
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -213,7 +221,8 @@ namespace DragWheel
 
         private void OnMouseUpClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            if (!_clickMode) return;
+            if (!_clickMode || !_pressed) return;
+            _pressed = false;
             var p = e.GetPosition(Root);
             double dx = p.X - Center, dy = p.Y - Center;
             double d = Math.Sqrt(dx * dx + dy * dy);

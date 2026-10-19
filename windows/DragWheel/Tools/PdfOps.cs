@@ -4,7 +4,6 @@ using System.IO;
 using System.Threading.Tasks;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
-using Windows.Storage;
 using Windows.Storage.Streams;
 using WinPdf = Windows.Data.Pdf;
 
@@ -89,8 +88,9 @@ namespace DragWheel.Tools
         /// <summary>Renders every page to an image with the PDF engine built into Windows.</summary>
         public static async Task<string> RenderPages(string path, bool png, string? folderOverride = null)
         {
-            var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
-            var doc = await WinPdf.PdfDocument.LoadFromFileAsync(file);
+            // Read through our own stream, so the file is released as soon as we are done.
+            using var source = File.OpenRead(path);
+            var doc = await WinPdf.PdfDocument.LoadFromStreamAsync(source.AsRandomAccessStream());
 
             var folder = folderOverride ?? FileOps.FolderNextTo(path, " images");
             Directory.CreateDirectory(folder);
@@ -104,7 +104,8 @@ namespace DragWheel.Tools
                 var options = new WinPdf.PdfPageRenderOptions
                 {
                     // About 150 dpi: sharp on screen, reasonable size.
-                    DestinationWidth = (uint)Math.Max(1, Math.Round(page.Size.Width * 150 / 72)),
+                    // Page sizes are in 1/96 inch: this is about 150 dpi.
+                    DestinationWidth = (uint)Math.Max(1, Math.Round(page.Size.Width * 150 / 96)),
                 };
                 if (!png) options.BitmapEncoderId = Windows.Graphics.Imaging.BitmapEncoder.JpegEncoderId;
 

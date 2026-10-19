@@ -33,7 +33,8 @@ namespace DragWheel
             if (!isFirst)
             {
                 // Hand the files (or "open the window") to the copy that is already running.
-                if (!SingleInstance.TrySend(args.Count > 0 ? args : new List<string> { "--open" }))
+                // With many files, Windows starts many copies at once; stay quiet unless the user started us by hand.
+                if (!SingleInstance.TrySend(args.Count > 0 ? args : new List<string> { "--open" }) && args.Count == 0)
                 {
                     MessageBox.Show("DragWheel is already running. Look for its icon near the clock.",
                         "DragWheel", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -67,11 +68,13 @@ namespace DragWheel
                 return;
             }
 
-            _incomingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+            _incomingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
             _incomingTimer.Tick += (_, _) =>
             {
                 _incomingTimer.Stop();
-                var files = _incoming.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                // Files that arrive while the wheel is open (right-click on many files) join it.
+                var earlier = _wheel != null && _wheel.IsClickOpen ? _wheel.Files : Array.Empty<string>();
+                var files = earlier.Concat(_incoming).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
                 _incoming.Clear();
                 ShowWheelForFiles(files);
             };
@@ -95,6 +98,8 @@ namespace DragWheel
             if (files.Count == 0)
             {
                 if (lines.Contains("--open") || lines.Count == 0) OpenMainWindow();
+                else if (lines.Any(l => !l.StartsWith("--")))
+                    _tray?.Notify("Nothing to convert", "Those items are not files on this PC (for example a phone or a zip view). Copy them to a folder first.", isError: true);
                 return;
             }
             _incoming.AddRange(files);

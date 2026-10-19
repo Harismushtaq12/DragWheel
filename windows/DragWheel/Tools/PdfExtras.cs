@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
-using Windows.Storage;
 using Windows.Storage.Streams;
 using WinPdf = Windows.Data.Pdf;
 
@@ -19,8 +18,8 @@ namespace DragWheel.Tools
         /// <summary>Every page as a JPEG (150 dpi), with its size in points.</summary>
         public static async Task<List<PageImage>> RenderPageBytes(string path)
         {
-            var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
-            var doc = await WinPdf.PdfDocument.LoadFromFileAsync(file);
+            using var source = File.OpenRead(path);
+            var doc = await WinPdf.PdfDocument.LoadFromStreamAsync(source.AsRandomAccessStream());
             var list = new List<PageImage>();
             for (uint i = 0; i < doc.PageCount; i++)
             {
@@ -28,14 +27,15 @@ namespace DragWheel.Tools
                 using var memory = new InMemoryRandomAccessStream();
                 var options = new WinPdf.PdfPageRenderOptions
                 {
-                    DestinationWidth = (uint)Math.Max(1, Math.Round(page.Size.Width * 150 / 72)),
+                    DestinationWidth = (uint)Math.Max(1, Math.Round(page.Size.Width * 150 / 96)),
                     BitmapEncoderId = Windows.Graphics.Imaging.BitmapEncoder.JpegEncoderId,
                 };
                 await page.RenderToStreamAsync(memory, options);
                 memory.Seek(0);
                 using var ms = new MemoryStream();
                 await memory.AsStreamForRead().CopyToAsync(ms);
-                list.Add(new PageImage(ms.ToArray(), page.Size.Width, page.Size.Height));
+                // Windows gives page sizes in 1/96 inch; Word wants points (1/72 inch).
+                list.Add(new PageImage(ms.ToArray(), page.Size.Width * 72 / 96, page.Size.Height * 72 / 96));
             }
             return list;
         }
@@ -43,14 +43,14 @@ namespace DragWheel.Tools
         /// <summary>Every page as a PNG stream for reading text. The caller disposes them.</summary>
         public static async Task<List<byte[]>> RenderPagePngs(string path, uint maxSide)
         {
-            var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
-            var doc = await WinPdf.PdfDocument.LoadFromFileAsync(file);
+            using var source = File.OpenRead(path);
+            var doc = await WinPdf.PdfDocument.LoadFromStreamAsync(source.AsRandomAccessStream());
             var list = new List<byte[]>();
             for (uint i = 0; i < doc.PageCount; i++)
             {
                 using var page = doc.GetPage(i);
                 using var memory = new InMemoryRandomAccessStream();
-                double scale = Math.Min(200.0 / 72, maxSide / Math.Max(page.Size.Width, page.Size.Height));
+                double scale = Math.Min(200.0 / 96, maxSide / Math.Max(page.Size.Width, page.Size.Height));
                 var options = new WinPdf.PdfPageRenderOptions { DestinationWidth = (uint)Math.Max(1, page.Size.Width * scale) };
                 await page.RenderToStreamAsync(memory, options);
                 memory.Seek(0);
@@ -72,8 +72,8 @@ namespace DragWheel.Tools
                 using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
                 var text = $"{i + 1} / {n}";
                 var size = gfx.MeasureString(text, font);
-                gfx.DrawString(text, font, XBrushes.DimGray,
-                    new XPoint((gfx.PageSize.Width - size.Width) / 2, gfx.PageSize.Height - 22));
+                var (left, top, width, height) = Visible(page);
+                gfx.DrawString(text, font, XBrushes.DimGray, new XPoint(left + (width - size.Width) / 2, top + height - 22));
             }
             var target = FileOps.NextTo(path, "pdf", " numbered");
             doc.Save(target);
@@ -87,18 +87,27 @@ namespace DragWheel.Tools
             foreach (var page in doc.Pages)
             {
                 using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
-                double w = gfx.PageSize.Width, h = gfx.PageSize.Height;
+                var (left, top, w, h) = Visible(page);
                 double size = Math.Min(w, h) / Math.Max(6, text.Length) * 1.6;
                 var font = new XFont("Arial", size, XFontStyleEx.Bold);
                 var brush = new XSolidBrush(XColor.FromArgb(48, 128, 128, 128));
                 var measured = gfx.MeasureString(text, font);
-                gfx.TranslateTransform(w / 2, h / 2);
+                gfx.TranslateTransform(left + w / 2, top + h / 2);
                 gfx.RotateTransform(-35);
                 gfx.DrawString(text, font, brush, new XPoint(-measured.Width / 2, measured.Height / 3));
             }
             var target = FileOps.NextTo(path, "pdf", " watermarked");
             doc.Save(target);
             return target;
+        }
+
+        /// <summary>The part of the page that is shown (crop box), in drawing units from the top-left.</summary>
+        private static (double Left, double Top, double Width, double Height) Visible(PdfPage page)
+        {
+            var media = page.MediaBox;
+            var crop = page.CropBox;
+            if (crop.IsEmpty || crop.Width <= 0 || crop.Height <= 0) return (0, 0, media.Width, media.Height);
+            return (crop.X1 - media.X1, media.Y2 - crop.Y2, crop.Width, crop.Height);
         }
 
         public static string Lock(string path, string password)

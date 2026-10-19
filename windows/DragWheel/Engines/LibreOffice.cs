@@ -59,7 +59,17 @@ namespace DragWheel.Engines
         /// Converts [input] with LibreOffice. [spec] is LibreOffice's target, e.g. "pdf" or "docx:MS Word 2007 XML".
         /// The result is moved to [output].
         /// </summary>
+        private static readonly System.Threading.SemaphoreSlim Gate = new(1, 1);
+
         public static async Task Convert(string input, string spec, string output)
+        {
+            // LibreOffice runs one conversion at a time with our profile.
+            await Gate.WaitAsync();
+            try { await ConvertNow(input, spec, output); }
+            finally { Gate.Release(); }
+        }
+
+        private static async Task ConvertNow(string input, string spec, string output)
         {
             var exe = Find() ?? throw new InvalidOperationException(
                 "This needs Microsoft Office or the free LibreOffice. Right-click the DragWheel icon and choose Install LibreOffice.");

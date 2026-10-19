@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 
@@ -28,13 +29,21 @@ namespace DragWheel.Tools
             return Free(dir, name + suffix, null);
         }
 
+        private static readonly object Lock = new();
+        // Names handed out to jobs that may still be writing, so parallel jobs never pick the same name.
+        private static readonly HashSet<string> Taken = new(StringComparer.OrdinalIgnoreCase);
+
         private static string Free(string dir, string baseName, string? ext)
         {
             string Make(string n) => Path.Combine(dir, ext == null ? n : $"{n}.{ext}");
-            var candidate = Make(baseName);
-            for (int i = 2; File.Exists(candidate) || Directory.Exists(candidate); i++)
-                candidate = Make($"{baseName} ({i})");
-            return candidate;
+            lock (Lock)
+            {
+                var candidate = Make(baseName);
+                for (int i = 2; File.Exists(candidate) || Directory.Exists(candidate) || Taken.Contains(candidate); i++)
+                    candidate = Make($"{baseName} ({i})");
+                Taken.Add(candidate);
+                return candidate;
+            }
         }
 
         public static string Sha256(string path)

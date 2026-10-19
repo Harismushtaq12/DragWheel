@@ -32,8 +32,8 @@ class DocLayout(
     private sealed interface Item
 
     private class Lines(val layout: StaticLayout, val from: Int, val to: Int, val x: Float, val y: Float) : Item
-    private class Pic(val bitmap: Bitmap, val rect: RectF) : Item
-    private class Row(val cells: List<StaticLayout>, val xs: List<Float>, val ws: List<Float>, val y: Float, val h: Float) : Item
+    private class Pic(val bytes: ByteArray, val rect: RectF) : Item
+    private class Row(val cells: List<StaticLayout>, val xs: List<Float>, val ws: List<Float>, val y: Float, val h: Float, val scale: Float = 1f) : Item
 
     private val pages = mutableListOf<MutableList<Item>>(mutableListOf())
     val pageCount: Int get() = pages.size
@@ -138,10 +138,6 @@ class DocLayout(
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(p.bytes, 0, p.bytes.size, opts)
         if (opts.outWidth <= 0 || opts.outHeight <= 0) return
-        var sample = 1
-        while (max(opts.outWidth, opts.outHeight) / sample > 2000) sample *= 2
-        val bitmap = BitmapFactory.decodeByteArray(p.bytes, 0, p.bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
-            ?: return
         var w = if (p.widthPt > 1) p.widthPt else opts.outWidth * 0.75f
         var h = if (p.heightPt > 1) p.heightPt else opts.outHeight * 0.75f
         val usable = bottom - margin
@@ -149,7 +145,8 @@ class DocLayout(
         w *= scale
         h *= scale
         if (y + h > bottom) newPage()
-        pages.last() += Pic(bitmap, RectF(margin, y, margin + w, y + h))
+        // Keep only the bytes; the picture is decoded when its page is drawn, to save memory.
+        pages.last() += Pic(p.bytes, RectF(margin, y, margin + w, y + h))
         y += h + 6f
     }
 
@@ -169,8 +166,10 @@ class DocLayout(
             val h = (cells.maxOfOrNull { it.height } ?: 0) + 8f
             if (y + h > bottom && y > margin) newPage()
             val xs = cells.indices.map { margin + it * colW }
-            pages.last() += Row(cells, xs, cells.indices.map { colW }, y, h)
-            y += h
+            // A row taller than a whole page is shrunk to fit, so no text is cut off.
+            val scale = min(1f, (bottom - y) / h)
+            pages.last() += Row(cells, xs, cells.indices.map { colW }, y, h, scale)
+            y += h * scale
         }
         y += 8f
     }
@@ -193,16 +192,38 @@ class DocLayout(
                 item.layout.draw(canvas)
                 canvas.restore()
             }
-            is Pic -> canvas.drawBitmap(item.bitmap, null, item.rect, Paint(Paint.FILTER_BITMAP_FLAG))
-            is Row -> for (i in item.cells.indices) {
-                canvas.drawRect(item.xs[i], item.y, item.xs[i] + item.ws[i], item.y + item.h, border)
+            is Pic -> drawPicture(canvas, item)
+            is Row -> {
                 canvas.save()
-                canvas.translate(item.xs[i] + 4f, item.y + 4f)
-                canvas.clipRect(0f, 0f, item.ws[i] - 8f, item.h - 8f)
-                item.cells[i].draw(canvas)
+                if (item.scale < 1f) {
+                    canvas.translate(margin, item.y)
+                    canvas.scale(item.scale, item.scale)
+                    canvas.translate(-margin, -item.y)
+                }
+                for (i in item.cells.indices) {
+                    canvas.drawRect(item.xs[i], item.y, item.xs[i] + item.ws[i], item.y + item.h, border)
+                    canvas.save()
+                    canvas.translate(item.xs[i] + 4f, item.y + 4f)
+                    canvas.clipRect(0f, 0f, item.ws[i] - 8f, item.h - 8f)
+                    item.cells[i].draw(canvas)
+                    canvas.restore()
+                }
                 canvas.restore()
             }
         }
+    }
+
+    /** Decodes a picture only as big as it is drawn, then frees it. */
+    private fun drawPicture(canvas: Canvas, pic: Pic) {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(pic.bytes, 0, pic.bytes.size, bounds)
+        val scale = max(1f, canvas.matrix.let { m -> val v = FloatArray(9); m.getValues(v); v[0] })
+        val targetW = (pic.rect.width() * scale * 1.5f).toInt().coerceAtLeast(64)
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= targetW) sample *= 2
+        val bmp = BitmapFactory.decodeByteArray(pic.bytes, 0, pic.bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return
+        canvas.drawBitmap(bmp, null, pic.rect, Paint(Paint.FILTER_BITMAP_FLAG))
+        bmp.recycle()
     }
 
     /** Page [index] as a picture [widthPx] wide. */

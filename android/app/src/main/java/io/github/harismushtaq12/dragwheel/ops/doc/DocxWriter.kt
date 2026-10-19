@@ -56,12 +56,14 @@ class DocxWriter {
     }
 
     /** A picture in its own paragraph. [ext] is "png" or "jpeg". */
-    fun image(bytes: ByteArray, ext: String, widthPt: Float, heightPt: Float, align: Int = 1) {
+    fun image(bytes: ByteArray, ext: String, widthPt: Float, heightPt: Float, align: Int = 1, pageBreakBefore: Boolean = false) {
         media += "image${media.size + 1}.$ext" to bytes
         val n = media.size
         val cx = (widthPt * 12700).toLong()
         val cy = (heightPt * 12700).toLong()
-        body.append("<w:p><w:pPr><w:spacing w:after=\"0\"/>")
+        body.append("<w:p><w:pPr>")
+        if (pageBreakBefore) body.append("<w:pageBreakBefore/>")
+        body.append("<w:spacing w:before=\"0\" w:after=\"0\"/>")
         if (align == 1) body.append("<w:jc w:val=\"center\"/>")
         body.append("</w:pPr><w:r><w:drawing>")
         body.append(

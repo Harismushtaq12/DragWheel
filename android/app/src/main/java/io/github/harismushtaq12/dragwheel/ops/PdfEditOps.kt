@@ -14,6 +14,8 @@ import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
+import com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDCheckBox
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDChoice
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDRadioButton
@@ -99,7 +101,18 @@ object PdfEditOps {
     private class Fonts(private val doc: PDDocument) {
         private val dir = "/system/fonts/"
         val regular: PDFont by lazy { load(listOf("Roboto-Regular.ttf", "RobotoStatic-Regular.ttf", "NotoSans-Regular.ttf", "DroidSans.ttf")) ?: PDType1Font.HELVETICA }
-        val bold: PDFont by lazy { load(listOf("Roboto-Bold.ttf", "RobotoStatic-Bold.ttf", "NotoSans-Bold.ttf", "DroidSans-Bold.ttf")) ?: regular }
+        private val boldFile: PDFont? by lazy { load(listOf("Roboto-Bold.ttf", "RobotoStatic-Bold.ttf", "NotoSans-Bold.ttf", "DroidSans-Bold.ttf")) }
+
+        /**
+         * A bold font for [text]. Newer phones have no separate bold file, so use Helvetica Bold
+         * for Latin text, or draw the regular font with a thin outline ("fake bold").
+         */
+        fun bold(text: String): Pair<PDFont, Boolean> {
+            boldFile?.let { return it to false }
+            val helv = PDType1Font.HELVETICA_BOLD
+            val latin = text.all { ch -> ch == '\n' || ch == '\t' || runCatching { helv.encode(ch.toString()) }.isSuccess }
+            return if (latin) helv to false else regular to true
+        }
 
         private fun load(names: List<String>): PDFont? {
             for (n in names) {
@@ -123,17 +136,22 @@ object PdfEditOps {
 
     private fun drawText(
         cs: PDPageContentStream, g: Geo, fonts: Fonts, font: PDFont,
-        u: Float, v: Float, text: String, size: Float, color: Int, extraAngle: Double = 0.0,
+        u: Float, v: Float, text: String, size: Float, color: Int, fakeBold: Boolean = false,
     ) {
         val (r, gr, b) = rgb(color)
         cs.setNonStrokingColor(r, gr, b)
+        if (fakeBold) {
+            cs.setRenderingMode(RenderingMode.FILL_STROKE)
+            cs.setStrokingColor(r, gr, b)
+            cs.setLineWidth(size * 0.03f)
+        } else cs.setRenderingMode(RenderingMode.FILL)
         text.split('\n').forEachIndexed { i, line ->
             if (line.isEmpty()) return@forEachIndexed
             val baselineV = v + (size + i * size * 1.25f) / g.dispH
             val (px, py) = g.map(u, baselineV)
             cs.beginText()
             cs.setFont(font, size)
-            cs.setTextMatrix(Matrix.getRotateInstance(Math.toRadians(g.rot.toDouble()) + extraAngle, px, py))
+            cs.setTextMatrix(Matrix.getRotateInstance(Math.toRadians(g.rot.toDouble()), px, py))
             cs.showText(fonts.safe(font, line))
             cs.endText()
         }
@@ -162,15 +180,18 @@ object PdfEditOps {
                     if (((page.rotation % 360) + 360) % 360 != 0) return
                     val w = page.cropBox.width
                     val h = page.cropBox.height
+                    // A wide gap means another column or table cell: start a new line there.
+                    val first = pos[0]
+                    if (any && first.xDirAdj - r * w > max(first.widthOfSpace * 2.5f, max(first.yScale, 1f))) flush()
                     for (p in pos) {
                         val x0 = p.xDirAdj / w
                         val x1 = (p.xDirAdj + p.widthDirAdj) / w
                         val y1 = p.yDirAdj / h
-                        val y0 = (p.yDirAdj - max(p.heightDir, p.fontSizeInPt * 0.7f)) / h
+                        val y0 = (p.yDirAdj - max(p.heightDir, p.yScale * 0.7f)) / h
                         if (!any) { l = x0; t = y0; r = x1; b = y1; any = true } else {
                             l = min(l, x0); t = min(t, y0); r = max(r, x1); b = max(b, y1)
                         }
-                        size = max(size, p.fontSizeInPt)
+                        size = max(size, p.yScale) // real size on the page, including scaling
                         if (p.font?.name?.contains("bold", ignoreCase = true) == true) bold = true
                     }
                     if (words.isNotEmpty()) words.append(' ')
@@ -251,7 +272,8 @@ object PdfEditOps {
                                 cs.restoreGraphicsState()
                             }
                             if (m.text.isNotBlank()) {
-                                drawText(cs, g, fonts, if (m.bold) fonts.bold else fonts.regular, m.x, m.y, m.text, m.sizePt, m.color)
+                                val (font, fake) = if (m.bold) fonts.bold(m.text) else fonts.regular to false
+                                drawText(cs, g, fonts, font, m.x, m.y, m.text, m.sizePt, m.color, fake)
                             }
                         }
                     }
@@ -297,8 +319,16 @@ object PdfEditOps {
                     problems += name
                 }
             }
-            if (problems.isNotEmpty()) form.needAppearances = true
-            if (flatten) runCatching { form.flatten() }
+            if (problems.isNotEmpty()) {
+                if (flatten) throw IllegalStateException(
+                    "These fields could not be filled, so the answers were not locked: ${problems.joinToString(", ")}. Try again with Keep editable."
+                )
+                form.needAppearances = true
+            }
+            if (flatten) {
+                form.refreshAppearances()
+                form.flatten(form.fieldTree.toList(), true)
+            }
             return PdfOps.write(context, doc, "${file.baseName} filled.pdf")
         }
     }
@@ -314,7 +344,8 @@ object PdfEditOps {
                 val res = page.resources ?: continue
                 for (name in res.xObjectNames.toList()) {
                     val x = runCatching { res.getXObject(name) }.getOrNull() as? PDImageXObject ?: continue
-                    if (x.softMask != null) continue // see-through pictures would get a black background
+                    // Skip see-through pictures and masks: as JPG they would turn into solid boxes.
+                    if (x.softMask != null || x.isStencil || x.cosObject.containsKey(COSName.MASK) || x.bitsPerComponent == 1) continue
                     val key = x.cosObject
                     val replacement = done.getOrPut(key) {
                         try {
@@ -370,7 +401,8 @@ object PdfEditOps {
             for (page in doc.pages) {
                 val g = Geo(page)
                 val size = min(g.dispW, g.dispH) / max(6, text.length) * 1.6f
-                val width = fonts.bold.getStringWidth(fonts.safe(fonts.bold, text)) / 1000f * size
+                val (boldFont, _) = fonts.bold(text)
+                val width = boldFont.getStringWidth(fonts.safe(boldFont, text)) / 1000f * size
                 val angle = Math.toRadians(35.0)
                 // Start point so the text is centred, going up at 35 degrees.
                 val cx = 0.5f * g.dispW - (width / 2f) * kotlin.math.cos(angle).toFloat()
@@ -383,9 +415,9 @@ object PdfEditOps {
                     val (px, py) = g.map(cx / g.dispW, cy / g.dispH)
                     cs.setNonStrokingColor(0.5f, 0.5f, 0.5f)
                     cs.beginText()
-                    cs.setFont(fonts.bold, size)
+                    cs.setFont(boldFont, size)
                     cs.setTextMatrix(Matrix.getRotateInstance(Math.toRadians(g.rot.toDouble()) + angle, px, py))
-                    cs.showText(fonts.safe(fonts.bold, text))
+                    cs.showText(fonts.safe(boldFont, text))
                     cs.endText()
                     cs.restoreGraphicsState()
                 }
@@ -412,7 +444,7 @@ object PdfEditOps {
                     val pos = textPositions ?: return
                     if (text.isNullOrEmpty() || pos.isEmpty()) return
                     val bold = pos.any { it.font?.name?.contains("bold", true) == true }
-                    val size = pos.maxOf { it.fontSizeInPt }
+                    val size = pos.maxOf { max(it.yScale, 1f) }
                     words += Word(text, bold, size)
                     for (p in pos) {
                         top = min(top, p.yDirAdj - p.heightDir)
@@ -496,14 +528,16 @@ object PdfEditOps {
                     if (i == 0) {
                         w.pageWidthPt = page.width.toFloat()
                         w.pageHeightPt = page.height.toFloat()
-                    } else w.pageBreak()
+                    }
                     val scale = 150f / 72f
                     val bmp = Bitmap.createBitmap((page.width * scale).toInt().coerceAtLeast(1), (page.height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
                     bmp.eraseColor(Color.WHITE)
                     page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     val bytes = ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
                     bmp.recycle()
-                    w.image(bytes, "jpeg", page.width * 0.98f, page.height * 0.98f)
+                    // Fit each page inside the Word page (pages may differ in size).
+                    val s = min(w.pageWidthPt / page.width, w.pageHeightPt / page.height) * 0.97f
+                    w.image(bytes, "jpeg", page.width * s, page.height * s, pageBreakBefore = i > 0)
                 }
             }
         }
@@ -554,7 +588,7 @@ object PdfEditOps {
                     val bmp = runCatching { x.image }.getOrNull() ?: continue
                     if (bmp.width < 16 || bmp.height < 16) continue
                     n++
-                    val png = bmp.hasAlpha() || x.softMask != null
+                    val png = x.softMask != null || x.cosObject.containsKey(COSName.MASK)
                     val ext = if (png) "png" else "jpg"
                     out += Storage.save(context, "page ${i + 1} picture $n.$ext", subfolder = "${file.baseName} pictures") { o ->
                         bmp.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 92, o)

@@ -147,7 +147,13 @@ fun FormFillScreen(fileName: String, state: FormState, onBack: () -> Unit, onSav
                         )
                         Text(label, color = Palette.Text, fontSize = 15.sp)
                     }
-                    else -> Column {
+                    else -> if (f.options.isEmpty()) OutlinedTextField(
+                        value = state.values[f.name] ?: "",
+                        onValueChange = { state.values[f.name] = it },
+                        label = { Text(label) },
+                        colors = fieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) else Column {
                         Text(label, color = Palette.Text, fontSize = 14.sp, modifier = Modifier.padding(bottom = 6.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             for (o in f.options) Pill(o, state.values[f.name] == o) { state.values[f.name] = o }

@@ -3,12 +3,10 @@ package io.github.harismushtaq12.dragwheel.ops.doc
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.OutputStreamWriter
+import java.io.Writer
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
-import javax.xml.transform.OutputKeys
-import javax.xml.transform.TransformerFactory
-import javax.xml.transform.dom.DOMSource
-import javax.xml.transform.stream.StreamResult
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.w3c.dom.Node
@@ -161,10 +159,12 @@ class DocxEditor(input: InputStream) {
         val removing = endOld > start
         var pos = 0
         var inserted = false
+        var before: Seg? = null // last text piece that ends at or before the change
         for (s in segs) {
             val sStart = pos
             val sEnd = pos + s.text.length
             pos = sEnd
+            if (s.isText && sEnd <= start) before = s
             if (s.isText) {
                 val touches = if (removing) sStart < endOld && sEnd > start else !inserted && sStart <= start && start <= sEnd
                 if (!touches) continue
@@ -179,14 +179,16 @@ class DocxEditor(input: InputStream) {
             }
         }
         if (!inserted && insert.isNotEmpty()) {
-            // The change only touched tabs or breaks: put the new text in the nearest text piece.
-            val target = segs.firstOrNull { it.isText && it.node.parentNode != null }
-            target?.let { setT(it.node, it.node.textContent + insert) }
+            // The change only touched tabs or breaks: put the new text right where they were.
+            val prev = before
+            if (prev != null) setT(prev.node, prev.node.textContent + insert)
+            else segs.firstOrNull { it.isText }?.let { setT(it.node, insert + it.node.textContent) }
         }
     }
 
     private fun setT(t: Element, value: String) {
-        t.textContent = value
+        // Characters that XML does not allow are dropped.
+        t.textContent = value.filter { it == '\t' || it == '\n' || it == '\r' || it >= ' ' }
         t.setAttribute("xml:space", "preserve")
     }
 
@@ -217,10 +219,12 @@ class DocxEditor(input: InputStream) {
 
     fun save(out: OutputStream) {
         val xml = ByteArrayOutputStream()
-        val t = TransformerFactory.newInstance().newTransformer()
-        t.setOutputProperty(OutputKeys.ENCODING, "UTF-8")
-        t.setOutputProperty(OutputKeys.STANDALONE, "yes")
-        t.transform(DOMSource(doc), StreamResult(xml))
+        // Our own small XML writer: it keeps every name and attribute as it was,
+        // and handles emoji and other characters safely on all phones.
+        OutputStreamWriter(xml, Charsets.UTF_8).use { w ->
+            w.write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n")
+            writeNode(doc.documentElement, w)
+        }
         ZipOutputStream(out).use { zip ->
             for ((name, data) in entries) {
                 zip.putNextEntry(ZipEntry(name))
@@ -228,6 +232,64 @@ class DocxEditor(input: InputStream) {
                 zip.closeEntry()
             }
         }
+    }
+
+    private fun writeNode(n: Node, w: Writer) {
+        when (n.nodeType) {
+            Node.ELEMENT_NODE -> {
+                val e = n as Element
+                w.write("<")
+                w.write(e.tagName)
+                val attrs = e.attributes
+                for (i in 0 until attrs.length) {
+                    val a = attrs.item(i)
+                    w.write(" ")
+                    w.write(a.nodeName)
+                    w.write("=\"")
+                    w.write(escape(a.nodeValue ?: "", attribute = true))
+                    w.write("\"")
+                }
+                if (!e.hasChildNodes()) {
+                    w.write("/>")
+                } else {
+                    w.write(">")
+                    var c = e.firstChild
+                    while (c != null) {
+                        writeNode(c, w)
+                        c = c.nextSibling
+                    }
+                    w.write("</")
+                    w.write(e.tagName)
+                    w.write(">")
+                }
+            }
+            Node.TEXT_NODE -> w.write(escape(n.nodeValue ?: "", attribute = false))
+            Node.CDATA_SECTION_NODE -> w.write("<![CDATA[" + (n.nodeValue ?: "") + "]]>")
+            Node.COMMENT_NODE -> w.write("<!--" + (n.nodeValue ?: "") + "-->")
+            Node.PROCESSING_INSTRUCTION_NODE -> w.write("<?" + n.nodeName + " " + (n.nodeValue ?: "") + "?>")
+            Node.ENTITY_REFERENCE_NODE -> {
+                var c = n.firstChild
+                while (c != null) {
+                    writeNode(c, w)
+                    c = c.nextSibling
+                }
+            }
+        }
+    }
+
+    private fun escape(s: String, attribute: Boolean): String {
+        val sb = StringBuilder(s.length + 16)
+        for (ch in s) when (ch) {
+            '&' -> sb.append("&amp;")
+            '<' -> sb.append("&lt;")
+            '>' -> sb.append("&gt;")
+            '"' -> if (attribute) sb.append("&quot;") else sb.append(ch)
+            '\n' -> if (attribute) sb.append("&#10;") else sb.append(ch)
+            '\t' -> if (attribute) sb.append("&#9;") else sb.append(ch)
+            '\r' -> sb.append("&#13;")
+            else -> sb.append(ch)
+        }
+        return sb.toString()
     }
 
     /** The edited document as blocks, for the PDF and the preview. */

@@ -65,6 +65,10 @@ private data class TextDraft(
     val text: String, val size: Float, val bold: Boolean,
     val cover: List<Float>?,
     val replacing: TextMark?,
+    /** For changed text: where the old line sat (0..1 from the top), so the new words sit on the same line. */
+    val baseline: Float? = null,
+    /** Page height in points, to turn the font size into the same 0..1 units. */
+    val pageHeightPt: Float = 842f,
 )
 
 /**
@@ -155,6 +159,8 @@ fun PdfEditScreen(file: InputFile, state: PdfEditState, onBack: () -> Unit, onSa
                                                     existing?.sizePt ?: line.sizePt,
                                                     existing?.bold ?: line.bold,
                                                     cover, existing,
+                                                    baseline = line.b,
+                                                    pageHeightPt = ph.toFloat(),
                                                 )
                                             }
                                         }
@@ -175,7 +181,9 @@ fun PdfEditScreen(file: InputFile, state: PdfEditState, onBack: () -> Unit, onSa
             onApply = { text, size, bold ->
                 d.replacing?.let { state.marks.remove(it) }
                 if (text.isNotBlank() || d.cover != null) {
-                    state.marks += TextMark(d.page, d.x, d.y, text, size, bold, if (d.cover != null) android.graphics.Color.BLACK else state.color, d.cover)
+                    // Text is placed by its top; keep the old baseline so the line does not jump.
+                    val y = d.baseline?.let { it - size / d.pageHeightPt } ?: d.y
+                    state.marks += TextMark(d.page, d.x, y, text, size, bold, if (d.cover != null) android.graphics.Color.BLACK else state.color, d.cover)
                 }
                 draft = null
             },

@@ -24,16 +24,28 @@ The wheel shows only what fits the file you are holding. On Windows, rest on the
 
 ### Windows
 
-| File | Convert | Tools |
-|---|---|---|
-| Image (JPG, PNG, HEIC, WebP, AVIF, GIF, BMP, TIFF, ICO) | JPG, PNG, WebP, AVIF, ICO, BMP, PDF | Compress, Half size, Rotate, Grayscale, Remove metadata, Read QR code |
-| PDF | PNG or JPG pages, Merge (2+ PDFs) | Split, Reverse, Rotate, Optimize, Remove info |
-| Audio\* | MP3, M4A, WAV, FLAC, OGG, Opus | Normalize volume, Mono, Smaller MP3 |
-| Video\* | MP4, WebM, MOV, MKV, GIF, MP3 | Compress, 720p, Mute, Rotate, First frame |
-| Archive (ZIP, 7z, RAR, tar.gz…) | Extract | SHA-256 |
-| Folder or any file | Zip, tar.gz | SHA-256, Copy path |
+Open the wheel in any of these ways: **hold Shift while dragging** a file, **right-click** a file and choose **Convert with DragWheel** (on Windows 11 under *Show more options*), use **Send to → DragWheel** for many files, or drop files on the **DragWheel window**. On the wheel, click a slice or use the **arrow keys and Enter**; the centre (or **Tab**) switches between **Convert** and **Tools**. Results are saved next to the originals and listed under **Recent**, where **Undo** sends them to the Recycle Bin.
 
-\*Audio and video need ffmpeg. Right-click the DragWheel icon near the clock and choose **Install ffmpeg**. It installs with winget, Microsoft's package manager.
+| File | Convert to | Tools |
+|---|---|---|
+| Image (JPG, PNG, HEIC, WebP, AVIF, GIF, TIFF, BMP, ICO, PSD, RAW, SVG…) | JPG, PNG, WebP, AVIF, TIFF, GIF, BMP, ICO, PDF, Word, Text (reads the words) | Compress, Half size, Rotate, Grayscale, Remove metadata, Read QR, One PDF |
+| PDF | Word (editable), Word (exact look), TXT, PNG, JPG, Read text from scans, Pictures inside, Merge | Split, Page numbers, Watermark, Lock with password, Rotate, Reverse, Optimize, Remove info |
+| Word (DOC, DOCX, ODT, RTF)\* | PDF, DOCX, ODT, RTF, TXT, HTML, PNG/JPG pages | One PDF (several files) |
+| Excel (XLS, XLSX, ODS)\* | PDF, XLSX, CSV, JSON, ODS | |
+| PowerPoint (PPT, PPTX, ODP)\* | PDF, PPTX, ODP, PNG/JPG slides | |
+| CSV / JSON | XLSX, JSON / CSV, XLSX | |
+| Text, Markdown, HTML | PDF\*, DOCX | |
+| Subtitles (SRT, VTT) | VTT / SRT, TXT | |
+| Audio\*\* | MP3, M4A, WAV, FLAC, OGG, Opus | Normalize, Mono, Smaller MP3 |
+| Video\*\* | MP4, H.265, WebM, MOV, MKV, GIF, MP3, WAV | Compress, 720p, Mute, Rotate, First frame |
+| Archives (ZIP, 7z, RAR, tar.gz) | Extract, ZIP | SHA-256 |
+| Any mix of pictures, PDFs and office files | One PDF | Zip |
+
+\*Office files use **Microsoft Office** when it is installed (most exact), otherwise the free **LibreOffice**, which the app can install for you (Settings, or the tray icon).
+\*\*Audio and video need **ffmpeg**, also installable from the app.
+Reading text from pictures uses the text reader **built into Windows** (the languages installed in Windows settings).
+
+Many files at once are converted in parallel, and one failed file does not stop the others.
 
 ### Android
 

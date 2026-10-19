@@ -37,17 +37,19 @@ The wheel shows only what fits the file you are holding. On Windows, rest on the
 
 ### Android
 
-Every file can be **viewed** first: zoom photos, scroll all PDF pages, play video and audio, read documents, see what is inside a zip. Every action **explains itself** and shows its options before it runs. Results open in a **preview**, and nothing is saved until you tap **Save to Downloads** (or Share).
+Open a file, then choose a ring on the wheel: **Convert**, **Edit** or **Tools**. Every action explains itself first, results open in a **preview**, and nothing is saved until you tap **Save to Downloads** (or Share).
 
-| File | Convert | Tools |
-|---|---|---|
-| Image | View, Edit (crop, turn, flip, brightness, contrast, colour), JPG, PNG, WebP, PDF | Compress, Resize, Rotate, Grayscale, Remove hidden details, Read QR code |
-| PDF | View, Pages (pick, turn, delete, reorder, pages to pictures), Pictures (all or chosen pages), Text, Merge (2+ PDFs) | Split, Rotate, Reverse, Lock with password, Unlock |
-| Word / text | View, Edit text, PDF, TXT, Word | Zip, fingerprint |
-| Video | View, MP4, Sound only (M4A), First picture | Trim, Compress (1080p/720p/480p), Mute, Rotate |
-| Audio | View, M4A | Trim |
-| ZIP | View contents, Unzip | Fingerprint |
-| Any file | Zip | Fingerprint (SHA-256) |
+| File | Convert to | Edit | Tools |
+|---|---|---|---|
+| Image | JPG, PNG, WebP, HEIC, BMP, ICO, PDF, Word, Text (reads the words) | View, Photo editor (crop, turn, flip, brightness, contrast, colour) | Compress, Resize, Rotate, Grayscale, Remove hidden details, Read QR code |
+| PDF | Word (editable), Word (exact look), JPG, PNG, Long image, Text, Scan to text, Pictures inside, Merge (2+ PDFs) | View, **Edit PDF** (change text, add text, draw/sign, highlight, white-out), Pages (turn, delete, reorder, to pictures), Fill form | Compress, Page numbers, Watermark, Split, Rotate, Reverse, Lock, Unlock |
+| Word (.docx) | PDF (keeps the look), JPG, PNG, HTML, TXT | View (with formatting), **Edit Word** (keeps formatting, find & replace), Plain edit | Zip, Fingerprint |
+| Text files | PDF, Word, HTML, JPG, TXT | View, Edit text | Zip, Fingerprint |
+| Video | MP4, M4A, WAV, Pictures every few seconds, First picture | Play, Trim | Compress (1080p/720p/480p), Mute, Rotate |
+| Audio | M4A, WAV | Play, Trim | Zip, Fingerprint |
+| ZIP | Unzip | View contents | Fingerprint |
+
+**How editing keeps the original:** Edit PDF draws your changes into the PDF and leaves everything else untouched. Changed text covers the old words with white and writes the new words on top in the phone's font. Edit Word rewrites only the words you changed, so fonts, bold, colours, tables and pictures stay as they were.
 
 Android uses the phone's own video encoders, so it needs no extra downloads.
 

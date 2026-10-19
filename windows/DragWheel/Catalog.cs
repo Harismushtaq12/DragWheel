@@ -18,7 +18,7 @@ namespace DragWheel
         private static readonly HashSet<string> ImageExt = Set("jpg jpeg jfif png webp heic heif avif bmp gif tif tiff ico");
         private static readonly HashSet<string> AudioExt = Set("mp3 m4a wav flac ogg opus aac wma aif aiff");
         private static readonly HashSet<string> VideoExt = Set("mp4 mov mkv webm avi wmv m4v flv 3gp mts");
-        private static readonly HashSet<string> ArchiveExt = Set("zip 7z rar tar gz tgz bz2 xz");
+        private static readonly HashSet<string> ArchiveExt = Set("zip 7z rar tar gz tgz");
 
         private enum Kind { Image, Audio, Video, Pdf, Archive, Folder, Other }
 
@@ -58,6 +58,8 @@ namespace DragWheel
             if (VideoExt.Contains(ext)) return Kind.Video;
             if (ext == "pdf") return Kind.Pdf;
             if (ArchiveExt.Contains(ext)) return Kind.Archive;
+            if (path.EndsWith(".tar.bz2", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".tar.xz", StringComparison.OrdinalIgnoreCase)) return Kind.Archive;
             return Kind.Other;
         }
 
@@ -199,8 +201,10 @@ namespace DragWheel
         private static WheelAction Extract() => PerFile("Extract", "unpack here", "Extracted", ArchiveOps.Extract);
 
         private static WheelAction Hash() => new("SHA-256", "copy checksum", "Copied to clipboard",
-            files => Task.Run(() =>
+            all => Task.Run(() =>
             {
+                var files = all.Where(File.Exists).ToList(); // folders have no checksum
+                if (files.Count == 0) throw new InvalidOperationException("Folders have no checksum. Drop files instead.");
                 var text = string.Join(Environment.NewLine, files.Select(f =>
                     files.Count == 1 ? FileOps.Sha256(f) : $"{FileOps.Sha256(f)}  {Path.GetFileName(f)}"));
                 return new ActionResult { ClipboardText = text, Message = text.Length > 80 ? text[..80] + "…" : text };

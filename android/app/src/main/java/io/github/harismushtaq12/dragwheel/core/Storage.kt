@@ -59,7 +59,11 @@ object Storage {
             resolver.delete(uri, null, null)
             throw e
         }
-        return SavedFile(uri, name, mime)
+        // Android may have renamed it, e.g. "photo (1).jpg".
+        val finalName = resolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        } ?: name
+        return SavedFile(uri, finalName, mime)
     }
 
     fun saveFile(context: Context, source: File, name: String, mime: String = mimeFor(name.substringAfterLast('.', ""))): SavedFile =

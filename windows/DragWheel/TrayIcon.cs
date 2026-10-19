@@ -43,6 +43,7 @@ namespace DragWheel
 
             menu.Opening += (_, _) =>
             {
+                Ffmpeg.Refresh();
                 var found = Ffmpeg.Find() != null;
                 _ffmpegItem.Text = found ? "ffmpeg is installed" : "Install ffmpeg (for audio and video)";
                 _ffmpegItem.Enabled = !found;

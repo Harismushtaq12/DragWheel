@@ -9,7 +9,8 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import io.github.harismushtaq12.dragwheel.core.InputFile
 import io.github.harismushtaq12.dragwheel.core.SavedFile
 import io.github.harismushtaq12.dragwheel.core.Storage
-import java.io.IOException
+import android.os.ParcelFileDescriptor
+import java.io.File
 
 object PdfOps {
     @Volatile private var ready = false
@@ -74,8 +75,18 @@ object PdfOps {
 
     /** Renders every page with Android's own PDF renderer, at about 150 dpi. */
     fun render(context: Context, file: InputFile, png: Boolean): List<SavedFile> {
-        val descriptor = context.contentResolver.openFileDescriptor(file.uri, "r")
-            ?: throw IOException("Cannot open ${file.name}")
+        // PdfRenderer needs a seekable file. Shared files are often streams, so copy first.
+        val temp = File(context.cacheDir, "render-${System.nanoTime()}.pdf")
+        try {
+            Storage.open(context, file).use { input -> temp.outputStream().use { input.copyTo(it) } }
+            val descriptor = ParcelFileDescriptor.open(temp, ParcelFileDescriptor.MODE_READ_ONLY)
+            return renderFrom(context, file, descriptor, png)
+        } finally {
+            temp.delete()
+        }
+    }
+
+    private fun renderFrom(context: Context, file: InputFile, descriptor: ParcelFileDescriptor, png: Boolean): List<SavedFile> {
         val ext = if (png) "png" else "jpg"
         descriptor.use { fd ->
             PdfRenderer(fd).use { renderer ->

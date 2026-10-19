@@ -51,7 +51,8 @@ namespace DragWheel.Tools
             "mp4" => Run(input, ext, "", Concat(H264, "-movflags", "+faststart")),
             "mov" => Run(input, ext, "", H264),
             "webm" => Run(input, ext, "", "-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-row-mt", "1", "-c:a", "libopus", "-b:a", "128k"),
-            "mkv" => Run(input, ext, "", "-map", "0", "-c", "copy"), // just a new container, no quality loss
+            // Just a new container, no quality loss. Only video and audio: iPhone data tracks do not fit in MKV.
+            "mkv" => Run(input, ext, "", "-map", "0:v", "-map", "0:a?", "-c", "copy"),
             _ => Run(input, ext, ""),
         };
 

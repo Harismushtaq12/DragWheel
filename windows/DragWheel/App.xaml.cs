@@ -72,6 +72,8 @@ namespace DragWheel
             if (_tray == null) return;
 
             if (action.NeedsFfmpeg && Ffmpeg.Find() == null)
+                Ffmpeg.Refresh(); // maybe it was installed since we last looked
+            if (action.NeedsFfmpeg && Ffmpeg.Find() == null)
             {
                 _tray.Notify("ffmpeg is needed",
                     "Audio and video need ffmpeg. Right-click the DragWheel icon and choose Install ffmpeg.",

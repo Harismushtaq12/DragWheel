@@ -77,8 +77,27 @@ object MediaOps {
     suspend fun toMp4(context: Context, file: InputFile) =
         export(context, file, "${file.baseName}.mp4")
 
-    suspend fun compress(context: Context, file: InputFile) =
-        export(context, file, "${file.baseName} compressed.mp4", videoEffects = listOf(Presentation.createForHeight(720)))
+    /** Re-encodes at a lower bitrate; also scales down to 720p, but never scales small videos up. */
+    suspend fun compress(context: Context, file: InputFile): SavedFile {
+        val effects = if (displayHeight(context, file) > 720) listOf<Effect>(Presentation.createForHeight(720)) else emptyList()
+        return export(context, file, "${file.baseName} compressed.mp4", videoEffects = effects)
+    }
+
+    /** Height as the video is shown, taking phone rotation into account. 0 if unknown. */
+    private fun displayHeight(context: Context, file: InputFile): Int {
+        val r = MediaMetadataRetriever()
+        return try {
+            r.setDataSource(context, file.uri)
+            val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val rot = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            if (rot == 90 || rot == 270) w else h
+        } catch (e: Exception) {
+            0
+        } finally {
+            r.release()
+        }
+    }
 
     suspend fun mute(context: Context, file: InputFile) =
         export(context, file, "${file.baseName} muted.mp4", removeAudio = true)
@@ -86,7 +105,7 @@ object MediaOps {
     suspend fun rotate(context: Context, file: InputFile) =
         export(
             context, file, "${file.baseName} rotated.mp4",
-            videoEffects = listOf(ScaleAndRotateTransformation.Builder().setRotationDegrees(90f).build()),
+            videoEffects = listOf(ScaleAndRotateTransformation.Builder().setRotationDegrees(270f) /* counter-clockwise, so 270 = 90° right */.build()),
         )
 
     /** Audio from a video, or any audio file, as AAC in an .m4a file. */

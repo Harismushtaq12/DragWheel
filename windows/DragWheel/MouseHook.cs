@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Threading;
 using static DragWheel.NativeMethods;
 
@@ -12,6 +13,9 @@ namespace DragWheel
     /// Fires ShiftDragStarted when the left button is held, the mouse has moved a bit,
     /// and Shift is down. It does not know yet whether files are being dragged;
     /// the wheel finds that out when the drag enters it.
+    ///
+    /// The hook runs on its own thread with its own message loop. Windows silently removes
+    /// low-level hooks that answer slowly, so it must never wait for the UI thread.
     /// </summary>
     internal sealed class MouseHook : IDisposable
     {
@@ -24,7 +28,10 @@ namespace DragWheel
         private readonly LowLevelMouseProc _proc; // keep a reference so the GC does not collect it
         private readonly uint _ownProcessId = (uint)Environment.ProcessId;
         private IntPtr _hook = IntPtr.Zero;
+        private Thread? _thread;
+        private uint _threadId;
 
+        // Only touched on the hook thread.
         private bool _down;
         private bool _fired;
         private bool _ignore;
@@ -37,12 +44,39 @@ namespace DragWheel
             _proc = Callback;
         }
 
+        /// <summary>Starts the hook thread. Throws if Windows refuses the hook.</summary>
         public void Start()
         {
-            using var module = Process.GetCurrentProcess().MainModule;
-            _hook = SetWindowsHookEx(WH_MOUSE_LL, _proc, GetModuleHandle(module?.ModuleName), 0);
-            if (_hook == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+            Exception? error = null;
+            using var started = new ManualResetEventSlim(false);
+
+            _thread = new Thread(() =>
+            {
+                _threadId = GetCurrentThreadId();
+                using (var module = Process.GetCurrentProcess().MainModule)
+                    _hook = SetWindowsHookEx(WH_MOUSE_LL, _proc, GetModuleHandle(module?.ModuleName), 0);
+                if (_hook == IntPtr.Zero)
+                    error = new Win32Exception(Marshal.GetLastWin32Error());
+                started.Set();
+                if (error != null) return;
+
+                // Message loop: the hook callback is delivered through it.
+                while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+                {
+                    TranslateMessage(ref msg);
+                    DispatchMessage(ref msg);
+                }
+                UnhookWindowsHookEx(_hook);
+                _hook = IntPtr.Zero;
+            })
+            {
+                IsBackground = true,
+                Name = "DragWheel mouse hook",
+                Priority = ThreadPriority.AboveNormal,
+            };
+            _thread.Start();
+            started.Wait();
+            if (error != null) throw error;
         }
 
         private IntPtr Callback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -95,10 +129,11 @@ namespace DragWheel
 
         public void Dispose()
         {
-            if (_hook != IntPtr.Zero)
+            if (_thread != null && _threadId != 0)
             {
-                UnhookWindowsHookEx(_hook);
-                _hook = IntPtr.Zero;
+                PostThreadMessage(_threadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+                _thread.Join(1000);
+                _thread = null;
             }
         }
     }

@@ -13,13 +13,19 @@ namespace DragWheel
     public static class Ffmpeg
     {
         private static string? _cached;
+        private static bool _searched;
 
+        /// <summary>Cached, so it is cheap to call while drawing the wheel.</summary>
         public static string? Find()
         {
-            if (_cached != null && File.Exists(_cached)) return _cached;
+            if (_searched && (_cached == null || File.Exists(_cached))) return _cached;
             _cached = Search();
+            _searched = true;
             return _cached;
         }
+
+        /// <summary>Forget the cached answer, e.g. after the user may have installed ffmpeg.</summary>
+        public static void Refresh() => _searched = false;
 
         private static string? Search()
         {
@@ -106,7 +112,7 @@ namespace DragWheel
             {
                 UseShellExecute = true
             });
-            _cached = null;
+            Refresh();
         }
     }
 }

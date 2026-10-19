@@ -45,6 +45,7 @@ namespace DragWheel
         private readonly DispatcherTimer _armTimer;   // hide if no files arrive
         private readonly DispatcherTimer _knobTimer;  // switch Convert/Tools
         private readonly DispatcherTimer _hideTimer;  // hide after mouse release
+        private readonly DispatcherTimer _watchdog;   // hide if the release was missed
 
         private string[] _files = Array.Empty<string>();
         private List<WheelAction> _actions = new();
@@ -76,6 +77,18 @@ namespace DragWheel
             _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
             _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); HideWheel(); };
 
+            // Safety net: if we miss the button-up message (UAC prompt, Ctrl+Alt+Del...),
+            // notice the released button ourselves so the wheel never stays stuck on screen.
+            _watchdog = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _watchdog.Tick += (_, _) =>
+            {
+                if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0)
+                {
+                    _watchdog.Stop();
+                    if (!_hideTimer.IsEnabled) _hideTimer.Start();
+                }
+            };
+
             SourceInitialized += (_, _) =>
             {
                 var hwnd = new WindowInteropHelper(this).Handle;
@@ -99,7 +112,9 @@ namespace DragWheel
             _actions = new List<WheelAction>();
             _gotFiles = false;
             _toolsMode = false;
-            _knobArmed = true;
+            // The wheel opens with the cursor on the knob. Only switch modes after the
+            // cursor has left the knob once and come back, or a short pause would flip it.
+            _knobArmed = false;
             _active = -1;
             _hideTimer.Stop();
             _knobTimer.Stop();
@@ -135,6 +150,7 @@ namespace DragWheel
             _armTimer.Stop();
             _knobTimer.Stop();
             _hideTimer.Stop();
+            _watchdog.Stop();
             if (!_shown) return;
             Hide();
             _shown = false;
@@ -158,6 +174,7 @@ namespace DragWheel
 
                 _gotFiles = true;
                 _armTimer.Stop();
+                _watchdog.Start();
                 _actions = Catalog.For(_files, _toolsMode);
                 Build();
                 Root.BeginAnimation(OpacityProperty,
@@ -267,6 +284,7 @@ namespace DragWheel
             int n = _actions.Count;
             if (n > 0)
             {
+                bool ffmpegMissing = _actions.Any(a => a.NeedsFfmpeg) && Ffmpeg.Find() == null;
                 double span = 360.0 / n;
                 double labelR = (OuterR + InnerR) / 2 + 4;
                 for (int i = 0; i < n; i++)
@@ -300,7 +318,7 @@ namespace DragWheel
                     };
                     var hint = new TextBlock
                     {
-                        Text = action.NeedsFfmpeg && Ffmpeg.Find() == null ? "needs ffmpeg" : action.Hint,
+                        Text = action.NeedsFfmpeg && ffmpegMissing ? "needs ffmpeg" : action.Hint,
                         FontFamily = UiFont,
                         FontSize = 10.5,
                         Foreground = TextMuted,

@@ -6,6 +6,7 @@ import io.github.harismushtaq12.dragwheel.core.SavedFile
 import io.github.harismushtaq12.dragwheel.core.Storage
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
+import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
@@ -34,7 +35,13 @@ object ArchiveOps {
         Storage.open(context, file).use { input ->
             ZipInputStream(input).use { zip ->
                 while (true) {
-                    val entry = zip.nextEntry ?: break
+                    val entry = try {
+                        zip.nextEntry
+                    } catch (e: ZipException) {
+                        // Android 14+ refuses entries like "../x". Keep what we already extracted.
+                        if (saved.isEmpty()) throw IllegalStateException("This zip file contains unsafe paths and was not extracted.")
+                        break
+                    } ?: break
                     if (entry.isDirectory) continue
                     // Never allow "../" tricks: keep only safe path parts.
                     val parts = entry.name.replace('\\', '/').split('/')

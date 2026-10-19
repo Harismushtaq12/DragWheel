@@ -26,7 +26,7 @@ import kotlin.math.roundToInt
 object ImageOps {
 
     /** Decodes with rotation applied. Software bitmap so we can read and draw it. */
-    private fun load(context: Context, file: InputFile, maxSide: Int = 8000): Bitmap {
+    private fun load(context: Context, file: InputFile, maxSide: Int = 4096): Bitmap {
         val source = ImageDecoder.createSource(context.contentResolver, file.uri)
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
@@ -53,6 +53,7 @@ object ImageOps {
             drawColor(Color.WHITE)
             drawBitmap(bitmap, 0f, 0f, null)
         }
+        bitmap.recycle()
         return out
     }
 
@@ -83,6 +84,7 @@ object ImageOps {
     fun halfSize(context: Context, file: InputFile): SavedFile {
         val bitmap = load(context, file)
         val half = Bitmap.createScaledBitmap(bitmap, max(1, bitmap.width / 2), max(1, bitmap.height / 2), true)
+        if (half !== bitmap) bitmap.recycle()
         return save(context, half, file, sameOrJpg(file), " small", quality = 88)
     }
 
@@ -90,6 +92,7 @@ object ImageOps {
         val bitmap = load(context, file)
         val m = Matrix().apply { postRotate(90f) }
         val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
+        if (rotated !== bitmap) bitmap.recycle()
         return save(context, rotated, file, sameOrJpg(file), " rotated", quality = 92)
     }
 
@@ -98,6 +101,7 @@ object ImageOps {
         val out = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
         val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) }) }
         Canvas(out).drawBitmap(bitmap, 0f, 0f, paint)
+        bitmap.recycle()
         return save(context, out, file, sameOrJpg(file), " bw", quality = 92)
     }
 
@@ -119,6 +123,7 @@ object ImageOps {
                 page.canvas.scale(scale, scale)
                 page.canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
                 pdf.finishPage(page)
+                bitmap.recycle()
             }
             val suffix = if (files.size > 1) " (+${files.size - 1})" else ""
             return Storage.save(context, "${files[0].baseName}$suffix.pdf", "application/pdf") { pdf.writeTo(it) }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using ImageMagick;
 using ZXing;
 
@@ -27,7 +28,18 @@ namespace DragWheel.Tools
         /// <summary>Opens the first frame, applies phone rotation.</summary>
         private static MagickImage Load(string path)
         {
-            var image = new MagickImage(path);
+            MagickImage image;
+            if (path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
+            {
+                // An icon holds several sizes; take the biggest, not the first (often 16 px).
+                using var frames = new MagickImageCollection(path);
+                var largest = frames.OrderByDescending(f => (long)f.Width * f.Height).First();
+                image = new MagickImage(largest);
+            }
+            else
+            {
+                image = new MagickImage(path);
+            }
             image.AutoOrient();
             return image;
         }
@@ -124,6 +136,9 @@ namespace DragWheel.Tools
                     image.BackgroundColor = MagickColors.White;
                     image.Alpha(AlphaOption.Remove);
                 }
+                // Choose the DPI so the long side is A4 height (11.69 in), not a poster.
+                double dpi = Math.Max(72, Math.Max(image.Width, image.Height) / 11.69);
+                image.Density = new Density(dpi, dpi, DensityUnit.PixelsPerInch);
                 pages.Add(image); // the collection disposes it
             }
             var suffix = paths.Count > 1 ? $" (+{paths.Count - 1})" : "";

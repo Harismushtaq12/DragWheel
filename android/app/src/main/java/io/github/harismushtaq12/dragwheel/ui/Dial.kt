@@ -69,12 +69,15 @@ fun Dial(
     val pick by rememberUpdatedState(onPick)
     val knobTap by rememberUpdatedState(onKnobTap)
 
-    val spin = rememberInfiniteTransition(label = "spin")
-    val angle by spin.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
-        label = "angle",
-    )
+    // Only animate while working, so an idle wheel draws nothing new.
+    val angle = if (working) {
+        val spin = rememberInfiniteTransition(label = "spin")
+        spin.animateFloat(
+            initialValue = 0f, targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
+            label = "angle",
+        ).value
+    } else 0f
 
     Canvas(
         modifier

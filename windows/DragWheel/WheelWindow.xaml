@@ -1,0 +1,19 @@
+<Window x:Class="DragWheel.WheelWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DragWheel"
+        Width="380" Height="380"
+        Left="-10000" Top="-10000"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="NoResize"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        AllowDrop="True"
+        UseLayoutRounding="True">
+    <!-- Transparent background makes the whole canvas one drop target.
+         Children are not hit-testable, so drag events do not flicker between them. -->
+    <Canvas x:Name="Root" Width="380" Height="380" Background="Transparent" />
+</Window>

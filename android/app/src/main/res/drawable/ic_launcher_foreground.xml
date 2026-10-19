@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A dial: dark ring of six segments, the top one lit in mint, a light knob in the middle.
+     Adaptive icon canvas is 108x108; the safe zone is the centre 66x66. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Ring segments, radius 31 to 19, centred at 54,54 -->
+    <path android:fillColor="#7FE0C2"
+        android:pathData="M39.3,26.9 A31,31 0 0,1 68.7,26.9 L63,37.5 A19,19 0 0,0 45,37.5 Z" />
+    <path android:fillColor="#2C3A49"
+        android:pathData="M71.6,28.6 A31,31 0 0,1 86.3,54 L74,54 A19,19 0 0,0 65,38.6 Z" />
+    <path android:fillColor="#2C3A49"
+        android:pathData="M86.3,57 A31,31 0 0,1 71.6,79.4 L65,69.4 A19,19 0 0,0 74,57 Z" />
+    <path android:fillColor="#2C3A49"
+        android:pathData="M68.7,81.1 A31,31 0 0,1 39.3,81.1 L45,70.5 A19,19 0 0,0 63,70.5 Z" />
+    <path android:fillColor="#2C3A49"
+        android:pathData="M36.4,79.4 A31,31 0 0,1 21.7,57 L34,57 A19,19 0 0,0 43,69.4 Z" />
+    <path android:fillColor="#2C3A49"
+        android:pathData="M21.7,54 A31,31 0 0,1 36.4,28.6 L43,38.6 A19,19 0 0,0 34,54 Z" />
+
+    <!-- Knob -->
+    <path android:fillColor="#EEF2F5"
+        android:pathData="M54,40 A14,14 0 1,1 53.99,40 Z" />
+</vector>

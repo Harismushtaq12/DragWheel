@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- The Windows 10 TFM gives us Windows.Data.Pdf for rendering PDF pages. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>DragWheel</AssemblyName>
+    <RootNamespace>DragWheel</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\DragWheel.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+    <Product>DragWheel</Product>
+    <Description>Shift-drag any file to convert it, right on your PC.</Description>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Images: JPG, PNG, WebP, HEIC, AVIF, ICO and more. Apache-2.0. -->
+    <PackageReference Include="Magick.NET-Q8-x64" Version="14.2.0" />
+    <!-- PDF merge / split / rotate. MIT. -->
+    <PackageReference Include="PDFsharp" Version="6.1.1" />
+    <!-- Extract 7z, RAR, tar.gz and more. MIT. -->
+    <PackageReference Include="SharpCompress" Version="0.38.0" />
+    <!-- QR code reading. Apache-2.0. -->
+    <PackageReference Include="ZXing.Net" Version="0.16.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\DragWheel.ico" />
+  </ItemGroup>
+
+</Project>

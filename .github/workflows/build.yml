@@ -1,0 +1,88 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows app
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build DragWheel.exe
+        run: >
+          dotnet publish windows/DragWheel/DragWheel.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -o publish
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DragWheel-Windows
+          path: publish/DragWheel.exe
+          if-no-files-found: error
+
+  android:
+    name: Android app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk DragWheel-Android.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DragWheel-Android
+          path: DragWheel-Android.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish "latest" download
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Replace the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest DragWheel.exe DragWheel-Android.apk \
+            --target "${{ github.sha }}" \
+            --prerelease \
+            --title "DragWheel (latest build)" \
+            --notes "Built automatically from commit ${{ github.sha }}.
+
+          **Windows:** download DragWheel.exe and run it. If Windows SmartScreen warns you, choose More info, then Run anyway (the app is not code-signed yet).
+
+          **Android:** download DragWheel-Android.apk on your phone and open it. Allow installing from your browser or Files app when asked."

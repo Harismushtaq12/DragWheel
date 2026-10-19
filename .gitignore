@@ -1,0 +1,19 @@
+# .NET
+bin/
+obj/
+publish/
+.vs/
+*.user
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+
+# OS
+.DS_Store
+Thumbs.db

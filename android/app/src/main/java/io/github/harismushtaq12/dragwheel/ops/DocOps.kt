@@ -1,19 +1,24 @@
 package io.github.harismushtaq12.dragwheel.ops
 
 import android.content.Context
-import android.graphics.Color
+import android.graphics.Bitmap
 import android.graphics.pdf.PdfDocument
-import android.text.Layout
-import android.text.StaticLayout
-import android.text.TextPaint
+import android.util.Base64
 import android.util.Xml
 import io.github.harismushtaq12.dragwheel.core.InputFile
 import io.github.harismushtaq12.dragwheel.core.SavedFile
 import io.github.harismushtaq12.dragwheel.core.Storage
+import io.github.harismushtaq12.dragwheel.ops.doc.DocLayout
+import io.github.harismushtaq12.dragwheel.ops.doc.DocxDoc
+import io.github.harismushtaq12.dragwheel.ops.doc.DocxEditor
+import io.github.harismushtaq12.dragwheel.ops.doc.DocxReader
+import io.github.harismushtaq12.dragwheel.ops.doc.DocxWriter
+import io.github.harismushtaq12.dragwheel.ops.doc.PageBreak
+import io.github.harismushtaq12.dragwheel.ops.doc.Para
+import io.github.harismushtaq12.dragwheel.ops.doc.Picture
+import io.github.harismushtaq12.dragwheel.ops.doc.Table
 import java.io.InputStream
-import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
 import org.xmlpull.v1.XmlPullParser
 
 /** Word documents and plain text. */
@@ -31,9 +36,11 @@ object DocOps {
 
     fun isDocument(f: InputFile) = isDocx(f) || isText(f)
 
+    // ---------- Reading ----------
+
     fun readText(context: Context, f: InputFile): String =
         Storage.open(context, f).use { input ->
-            if (isDocx(f)) readDocx(input)
+            if (isDocx(f)) readDocxText(input)
             else input.bufferedReader().use { r ->
                 val sb = StringBuilder()
                 val buf = CharArray(8192)
@@ -46,8 +53,13 @@ object DocOps {
             }
         }
 
-    /** Reads the words of a .docx: paragraphs, tabs and line breaks. Formatting is dropped. */
-    private fun readDocx(input: InputStream): String {
+    /** The document with its formatting, for preview and conversion. */
+    fun model(context: Context, f: InputFile): DocxDoc =
+        if (isDocx(f)) Storage.open(context, f).use { DocxReader.read(it) }
+        else DocLayout.fromText(readText(context, f))
+
+    /** Just the words of a .docx: paragraphs, tabs and line breaks. */
+    private fun readDocxText(input: InputStream): String {
         ZipInputStream(input).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
@@ -57,8 +69,8 @@ object DocOps {
                 parser.setInput(zip, "UTF-8")
                 val sb = StringBuilder()
                 var inText = false
-                var inTabStops = false   // <w:tabs> lists tab positions, not real tabs
-                var fallback = 0         // text boxes are stored twice; skip the copy in mc:Fallback
+                var inTabStops = false
+                var fallback = 0
                 while (true) {
                     when (parser.next()) {
                         XmlPullParser.END_DOCUMENT -> break
@@ -85,48 +97,20 @@ object DocOps {
         throw IllegalStateException("This does not look like a Word (.docx) file.")
     }
 
+    // ---------- Making files ----------
+
     fun toTxt(context: Context, baseName: String, text: String): SavedFile =
         Storage.save(context, "$baseName.txt", "text/plain") { it.write(text.toByteArray(Charsets.UTF_8)) }
 
-    /** A simple A4 PDF: the words with line wrapping. Fonts, tables and pictures are not kept. */
-    fun toPdf(context: Context, baseName: String, text: String): SavedFile {
-        val pageW = 595
-        val pageH = 842
-        val margin = 56
-        val width = pageW - 2 * margin
-        val usable = pageH - 2 * margin
-        val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
-            color = Color.BLACK
-            textSize = 11f
-        }
-        val content = text.ifEmpty { " " }
-        val layout = StaticLayout.Builder.obtain(content, 0, content.length, paint, width)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-            .setLineSpacing(0f, 1.25f)
-            .build()
-
+    /** A PDF that keeps the document's look: bold, italic, sizes, colours, headings, tables, pictures. */
+    fun toPdf(context: Context, baseName: String, doc: DocxDoc): SavedFile {
+        val layout = DocLayout(doc)
         val pdf = PdfDocument()
         try {
-            var line = 0
-            var pageNo = 1
-            while (line < layout.lineCount) {
-                val top = layout.getLineTop(line)
-                var last = line
-                while (last + 1 < layout.lineCount && layout.getLineBottom(last + 1) - top <= usable) last++
-                val bottom = layout.getLineBottom(last)
-
-                val page = pdf.startPage(PdfDocument.PageInfo.Builder(pageW, pageH, pageNo).create())
-                val c = page.canvas
-                c.drawColor(Color.WHITE)
-                c.save()
-                c.translate(margin.toFloat(), (margin - top).toFloat())
-                c.clipRect(0f, top.toFloat(), width.toFloat(), bottom.toFloat())
-                layout.draw(c)
-                c.restore()
+            for (i in 0 until layout.pageCount) {
+                val page = pdf.startPage(PdfDocument.PageInfo.Builder(layout.pageW.toInt(), layout.pageH.toInt(), i + 1).create())
+                layout.draw(page.canvas, i)
                 pdf.finishPage(page)
-
-                line = last + 1
-                pageNo++
             }
             return Storage.save(context, "$baseName.pdf", "application/pdf") { pdf.writeTo(it) }
         } finally {
@@ -134,47 +118,92 @@ object DocOps {
         }
     }
 
-    /** A simple Word file: one paragraph per line. */
-    fun toDocx(context: Context, baseName: String, text: String): SavedFile =
-        Storage.save(context, "$baseName.docx", Storage.mimeFor("docx")) { out ->
-            ZipOutputStream(out).use { zip ->
-                fun put(name: String, body: String) {
-                    zip.putNextEntry(ZipEntry(name))
-                    zip.write(body.toByteArray(Charsets.UTF_8))
-                    zip.closeEntry()
-                }
-                put(
-                    "[Content_Types].xml",
-                    """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"""
-                )
-                put(
-                    "_rels/.rels",
-                    """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"""
-                )
-                val body = text.split('\n').joinToString("") { line ->
-                    val runs = line.split('\t').joinToString("<w:tab/>") { part ->
-                        if (part.isEmpty()) "" else "<w:t xml:space=\"preserve\">${escape(part)}</w:t>"
-                    }
-                    "<w:p><w:r>$runs</w:r></w:p>"
-                }
-                put(
-                    "word/document.xml",
-                    """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>$body<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>"""
-                )
-            }
-        }
+    fun toPdf(context: Context, baseName: String, text: String): SavedFile = toPdf(context, baseName, DocLayout.fromText(text))
 
-    private fun escape(s: String) = buildString {
-        for (ch in s) when {
-            ch == '&' -> append("&amp;")
-            ch == '<' -> append("&lt;")
-            ch == '>' -> append("&gt;")
-            ch == '"' -> append("&quot;")
-            ch < ' ' -> Unit // control characters are not allowed in XML
-            else -> append(ch)
+    /** Each page as a picture. */
+    fun toImages(context: Context, baseName: String, doc: DocxDoc, png: Boolean): List<SavedFile> {
+        val layout = DocLayout(doc)
+        val ext = if (png) "png" else "jpg"
+        val digits = layout.pageCount.toString().length
+        return (0 until layout.pageCount).map { i ->
+            val bitmap = layout.render(i, 1240) // about 150 dpi on A4
+            Storage.save(context, "page ${(i + 1).toString().padStart(digits, '0')}.$ext", subfolder = "$baseName pages") { out ->
+                bitmap.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 90, out)
+            }.also { bitmap.recycle() }
         }
     }
+
+    /** A new Word file from plain text: one paragraph per line. */
+    fun toDocx(context: Context, baseName: String, text: String): SavedFile {
+        val w = DocxWriter()
+        for (line in text.split('\n')) w.text(line.trimEnd('\r'))
+        return Storage.save(context, "$baseName.docx", Storage.mimeFor("docx")) { w.write(it) }
+    }
+
+    /** A web page that keeps headings, bold, italic, colours, tables and pictures. */
+    fun toHtml(context: Context, baseName: String, doc: DocxDoc): SavedFile {
+        val sb = StringBuilder()
+        sb.append("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">")
+        sb.append("<title>").append(esc(baseName)).append("</title>")
+        sb.append("<style>body{font-family:sans-serif;max-width:46em;margin:2em auto;padding:0 1em;line-height:1.5}")
+        sb.append("table{border-collapse:collapse}td{border:1px solid #999;padding:4px 8px;vertical-align:top}img{max-width:100%}</style>")
+        sb.append("</head><body>")
+        fun para(p: Para, tag: String? = null) {
+            val t = tag ?: when (p.heading) { 9 -> "h1"; in 1..6 -> "h${(p.heading + 1).coerceAtMost(6)}"; else -> "p" }
+            val align = when (p.align) { 1 -> " style=\"text-align:center\""; 2 -> " style=\"text-align:right\""; 3 -> " style=\"text-align:justify\""; else -> "" }
+            sb.append("<$t$align>")
+            p.bullet?.let { sb.append("&bull; ") }
+            for (r in p.runs) {
+                var s = esc(r.text).replace("\n", "<br>").replace("\t", "&emsp;")
+                if (r.bold) s = "<b>$s</b>"
+                if (r.italic) s = "<i>$s</i>"
+                if (r.underline) s = "<u>$s</u>"
+                val style = buildString {
+                    r.color?.let { append("color:#%06x;".format(it)) }
+                    r.sizePt?.let { append("font-size:${it}pt;") }
+                }
+                if (style.isNotEmpty()) s = "<span style=\"$style\">$s</span>"
+                sb.append(s)
+            }
+            sb.append("</$t>")
+        }
+        for (b in doc.blocks) when (b) {
+            is Para -> para(b)
+            is Picture -> {
+                val mime = if (b.bytes.size > 3 && b.bytes[0] == 0x89.toByte()) "image/png" else "image/jpeg"
+                sb.append("<p><img src=\"data:$mime;base64,").append(Base64.encodeToString(b.bytes, Base64.NO_WRAP)).append("\"></p>")
+            }
+            is Table -> {
+                sb.append("<table>")
+                for (row in b.rows) {
+                    sb.append("<tr>")
+                    for (cell in row) {
+                        sb.append("<td>")
+                        cell.forEach { para(it, "div") }
+                        sb.append("</td>")
+                    }
+                    sb.append("</tr>")
+                }
+                sb.append("</table>")
+            }
+            PageBreak -> sb.append("<hr>")
+        }
+        sb.append("</body></html>")
+        return Storage.save(context, "$baseName.html", "text/html") { it.write(sb.toString().toByteArray(Charsets.UTF_8)) }
+    }
+
+    /** Saves edits made in the Word editor, keeping the original formatting. */
+    fun saveEditedDocx(context: Context, baseName: String, editor: DocxEditor, texts: List<String>, asPdf: Boolean): SavedFile {
+        editor.apply(texts)
+        return if (asPdf) toPdf(context, baseName, editor.model())
+        else Storage.save(context, "$baseName.docx", Storage.mimeFor("docx")) { editor.save(it) }
+    }
+
+    fun openEditor(context: Context, f: InputFile): DocxEditor = Storage.open(context, f).use { DocxEditor(it) }
+
+    private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    /** Used by PDF to Word: plain runs to Word. */
+    fun writeDocx(context: Context, name: String, writer: DocxWriter): SavedFile =
+        Storage.save(context, name, Storage.mimeFor("docx")) { writer.write(it) }
 }

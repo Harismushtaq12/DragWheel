@@ -30,6 +30,7 @@ import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
@@ -153,6 +154,112 @@ object MediaOps {
             }
         } finally {
             retriever.release()
+        }
+    }
+
+    /** Uncompressed WAV sound, which every audio program can open and edit. */
+    suspend fun toWav(context: Context, file: InputFile): SavedFile {
+        val extractor = android.media.MediaExtractor()
+        val temp = File(context.cacheDir, "wav-${System.nanoTime()}.wav")
+        try {
+            extractor.setDataSource(context, file.uri, null)
+            val track = (0 until extractor.trackCount).firstOrNull {
+                extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            } ?: throw IllegalStateException("There is no sound in this file.")
+            extractor.selectTrack(track)
+            val format = extractor.getTrackFormat(track)
+            val mime = format.getString(android.media.MediaFormat.KEY_MIME)!!
+            var channels = format.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT)
+            var rate = format.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE)
+            var isFloat = false
+            val codec = android.media.MediaCodec.createDecoderByType(mime)
+            codec.configure(format, null, null, 0)
+            codec.start()
+            var total = 0L
+            try {
+                java.io.RandomAccessFile(temp, "rw").use { raf ->
+                    raf.write(ByteArray(44))
+                    val info = android.media.MediaCodec.BufferInfo()
+                    var inputDone = false
+                    var outputDone = false
+                    while (!outputDone) {
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        if (!inputDone) {
+                            val i = codec.dequeueInputBuffer(10_000)
+                            if (i >= 0) {
+                                val buf = codec.getInputBuffer(i)!!
+                                val n = extractor.readSampleData(buf, 0)
+                                if (n < 0) {
+                                    codec.queueInputBuffer(i, 0, 0, 0, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                    inputDone = true
+                                } else {
+                                    codec.queueInputBuffer(i, 0, n, extractor.sampleTime, 0)
+                                    extractor.advance()
+                                }
+                            }
+                        }
+                        val o = codec.dequeueOutputBuffer(info, 10_000)
+                        if (o == android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                            val of = codec.outputFormat
+                            channels = of.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT)
+                            rate = of.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE)
+                            if (of.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING)) {
+                                isFloat = of.getInteger(android.media.MediaFormat.KEY_PCM_ENCODING) == android.media.AudioFormat.ENCODING_PCM_FLOAT
+                            }
+                        } else if (o >= 0) {
+                            val ob = codec.getOutputBuffer(o)!!
+                            ob.position(info.offset)
+                            ob.limit(info.offset + info.size)
+                            val bytes = if (isFloat) {
+                                val fb = ob.order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer()
+                                val outB = java.nio.ByteBuffer.allocate(fb.remaining() * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                                while (fb.hasRemaining()) outB.putShort((fb.get().coerceIn(-1f, 1f) * 32767).toInt().toShort())
+                                outB.array()
+                            } else ByteArray(info.size).also { ob.get(it) }
+                            raf.write(bytes)
+                            total += bytes.size
+                            codec.releaseOutputBuffer(o, false)
+                            if (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
+                            if (total > 2_000_000_000L) throw IllegalStateException("The sound is too long for one WAV file.")
+                        }
+                    }
+                    val h = java.nio.ByteBuffer.allocate(44).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                    h.put("RIFF".toByteArray()).putInt((36 + total).toInt()).put("WAVE".toByteArray())
+                    h.put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(channels.toShort()).putInt(rate)
+                        .putInt(rate * channels * 2).putShort((channels * 2).toShort()).putShort(16)
+                    h.put("data".toByteArray()).putInt(total.toInt())
+                    raf.seek(0)
+                    raf.write(h.array())
+                }
+            } finally {
+                runCatching { codec.stop() }
+                codec.release()
+            }
+            return Storage.saveFile(context, temp, "${file.baseName}.wav", "audio/wav")
+        } finally {
+            extractor.release()
+            temp.delete()
+        }
+    }
+
+    /** A picture every few seconds. */
+    suspend fun frames(context: Context, file: InputFile, everySeconds: Int): List<SavedFile> {
+        val length = info(context, file).durationMs ?: throw IllegalStateException("Could not read the length of this video.")
+        val step = everySeconds.coerceAtLeast(1) * 1000L
+        val times = generateSequence(0L) { it + step }.takeWhile { it < length }.take(120).toList()
+        val r = MediaMetadataRetriever()
+        try {
+            r.setDataSource(context, file.uri)
+            return times.mapIndexed { i, t ->
+                kotlin.coroutines.coroutineContext.ensureActive()
+                val frame = r.getScaledFrameAtTime(t * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 1920, 1920)
+                    ?: throw IOException("Could not read a picture at ${t / 1000} s.")
+                Storage.save(context, "frame ${(i + 1).toString().padStart(3, '0')}.jpg", "image/jpeg", subfolder = "${file.baseName} frames") {
+                    frame.compress(Bitmap.CompressFormat.JPEG, 90, it)
+                }.also { frame.recycle() }
+            }
+        } finally {
+            r.release()
         }
     }
 

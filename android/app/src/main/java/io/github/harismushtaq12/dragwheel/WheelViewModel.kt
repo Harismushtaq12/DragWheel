@@ -17,23 +17,30 @@ import io.github.harismushtaq12.dragwheel.core.Catalog
 import io.github.harismushtaq12.dragwheel.core.Editor
 import io.github.harismushtaq12.dragwheel.core.FileInfo
 import io.github.harismushtaq12.dragwheel.core.InputFile
+import io.github.harismushtaq12.dragwheel.core.Mode
 import io.github.harismushtaq12.dragwheel.core.Options
 import io.github.harismushtaq12.dragwheel.core.SavedFile
 import io.github.harismushtaq12.dragwheel.core.Storage
 import io.github.harismushtaq12.dragwheel.core.TextDoc
 import io.github.harismushtaq12.dragwheel.core.WheelAction
 import io.github.harismushtaq12.dragwheel.ops.DocOps
+import io.github.harismushtaq12.dragwheel.ops.FormField
 import io.github.harismushtaq12.dragwheel.ops.MediaOps
+import io.github.harismushtaq12.dragwheel.ops.PdfEditOps
 import io.github.harismushtaq12.dragwheel.ops.PdfOps
+import io.github.harismushtaq12.dragwheel.ops.doc.DocxEditor
+import io.github.harismushtaq12.dragwheel.ui.FormState
 import io.github.harismushtaq12.dragwheel.ui.ImageEditState
 import io.github.harismushtaq12.dragwheel.ui.PagesEditState
+import io.github.harismushtaq12.dragwheel.ui.PdfEditState
 import io.github.harismushtaq12.dragwheel.ui.TextEditState
+import io.github.harismushtaq12.dragwheel.ui.WordEditState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Where the user is. Kept as a stack so Back works everywhere. */
+/** Where the user is. Kept as a stack so Back works everywhere. Editors keep their state in their entry. */
 sealed interface Screen {
     data object Home : Screen
     data object Wheel : Screen
@@ -43,6 +50,15 @@ sealed interface Screen {
     }
     data class PdfPages(val file: InputFile) : Screen {
         val state = PagesEditState()
+    }
+    data class PdfEdit(val file: InputFile) : Screen {
+        val state = PdfEditState()
+    }
+    class PdfForm(val file: InputFile, fields: List<FormField>) : Screen {
+        val state = FormState(fields)
+    }
+    class WordEdit(val file: InputFile, editor: DocxEditor) : Screen {
+        val state = WordEditState(editor)
     }
     data class TextEdit(val doc: TextDoc) : Screen {
         val state = TextEditState(doc)
@@ -57,7 +73,7 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var info by mutableStateOf<FileInfo?>(null)
         private set
-    var toolsMode by mutableStateOf(false)
+    var mode by mutableStateOf(Mode.CONVERT)
         private set
 
     /** Action whose explanation card is open. */
@@ -74,7 +90,7 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
     private val stack = mutableStateListOf<Screen>(Screen.Home)
     val screen: Screen get() = stack.last()
 
-    val actions: List<WheelAction> by derivedStateOf { Catalog.forFiles(files, toolsMode) }
+    val actions: List<WheelAction> by derivedStateOf { Catalog.forFiles(files, mode) }
 
     private var job: Job? = null
 
@@ -91,7 +107,7 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             files = described
-            toolsMode = false
+            mode = Mode.CONVERT
             pending = null
             info = null
             stack.clear()
@@ -120,9 +136,11 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
         stack += Screen.Home
     }
 
-    fun setMode(tools: Boolean) {
-        if (working == null) toolsMode = tools
+    fun setMode(m: Mode) {
+        if (working == null) mode = m
     }
+
+    fun nextMode() = setMode(Mode.entries[(mode.ordinal + 1) % Mode.entries.size])
 
     // ---------- Navigation ----------
 
@@ -151,11 +169,22 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
 
     fun pick(action: WheelAction) {
         if (working != null) return
+        val f = files.firstOrNull() ?: return
         when (action.editor) {
-            Editor.VIEW -> open(Screen.View(files[0]))
-            Editor.IMAGE -> open(Screen.ImageEdit(files[0]))
-            Editor.PDF_PAGES -> open(Screen.PdfPages(files[0]))
-            Editor.TEXT -> openText(files[0])
+            Editor.VIEW -> open(Screen.View(f))
+            Editor.IMAGE -> open(Screen.ImageEdit(f))
+            Editor.PDF_PAGES -> open(Screen.PdfPages(f))
+            Editor.PDF_EDIT -> open(Screen.PdfEdit(f))
+            Editor.PDF_FORM -> runJob("Reading the form") {
+                val fields = PdfEditOps.formFields(context, f)
+                if (fields.isEmpty()) throw IllegalStateException("This PDF has no fields to fill in. To type on it anyway, use Edit PDF.")
+                withContext(Dispatchers.Main) { open(Screen.PdfForm(f, fields)) }
+            }
+            Editor.WORD -> runJob("Opening ${f.name}") {
+                val editor = DocOps.openEditor(context, f)
+                withContext(Dispatchers.Main) { open(Screen.WordEdit(f, editor)) }
+            }
+            Editor.TEXT -> openText(f)
             null -> pending = action
         }
     }
@@ -181,7 +210,7 @@ class WheelViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Runs work made by an editor screen (photo, pages, text). */
+    /** Runs work made by an editor screen (photo, pages, text, PDF, Word, form). */
     fun runEditor(label: String, done: String, work: suspend (Context) -> ActionResult) {
         runJob(label) {
             Storage.beginJob(context)

@@ -10,6 +10,8 @@ object Palette {
     val Ink = Color(0xFF141C25)
     val Ring = Color(0xFF1D2733)
     val RingTools = Color(0xFF2A2338)
+    val RingEdit = Color(0xFF1A2B2A)
+    val SegmentEdit = Color(0xFF28403D)
     val Segment = Color(0xFF2C3A49)
     val SegmentTools = Color(0xFF3A314B)
     val Mint = Color(0xFF7FE0C2)

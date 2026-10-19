@@ -71,7 +71,8 @@ fun FileViewer(file: InputFile, modifier: Modifier = Modifier) {
         Catalog.Kind.PDF -> PdfView(file, modifier)
         Catalog.Kind.VIDEO -> MediaView(file, isAudio = false, modifier)
         Catalog.Kind.AUDIO -> MediaView(file, isAudio = true, modifier)
-        Catalog.Kind.DOC -> TextPreview(file, modifier)
+        Catalog.Kind.WORD -> DocPreview(file, modifier)
+        Catalog.Kind.TEXT -> TextPreview(file, modifier)
         Catalog.Kind.ZIP -> ZipList(file, modifier)
         Catalog.Kind.OTHER -> Message("No preview for this kind of file.\n${file.name}", modifier)
     }
@@ -265,6 +266,38 @@ private fun MediaView(file: InputFile, isAudio: Boolean, modifier: Modifier) {
 }
 
 // ---------- Documents ----------
+
+/** A Word document shown page by page with its formatting. */
+@Composable
+private fun DocPreview(file: InputFile, modifier: Modifier) {
+    val context = LocalContext.current
+    val state by produceState<Load<io.github.harismushtaq12.dragwheel.ops.doc.DocLayout>>(Load.Busy, file.uri) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { Load.Ready(io.github.harismushtaq12.dragwheel.ops.doc.DocLayout(DocOps.model(context, file))) }
+                .getOrElse { Load.Failed(it.message ?: "Cannot show this document.") }
+        }
+    }
+    val lock = remember { Mutex() }
+    when (val s = state) {
+        is Load.Busy -> Loading(modifier)
+        is Load.Failed -> Message(s.message, modifier)
+        is Load.Ready -> BoxWithConstraints(modifier.fillMaxSize()) {
+            val widthPx = with(LocalDensity.current) { maxWidth.toPx() }.toInt().coerceAtMost(1400)
+            val layout = s.value
+            LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(layout.pageCount) { i ->
+                    val page by produceState<Bitmap?>(null, layout, i, widthPx) {
+                        value = lock.withLock { withContext(Dispatchers.IO) { runCatching { layout.render(i, widthPx) }.getOrNull() } }
+                    }
+                    Box(Modifier.fillMaxWidth().aspectRatio(layout.pageW / layout.pageH).background(Color.White)) {
+                        page?.let { Image(it.asImageBitmap(), contentDescription = "Page ${i + 1}", modifier = Modifier.fillMaxSize()) }
+                    }
+                    Text("Page ${i + 1} of ${layout.pageCount}", color = Palette.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun TextPreview(file: InputFile, modifier: Modifier) {

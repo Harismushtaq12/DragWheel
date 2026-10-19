@@ -28,7 +28,7 @@ object PdfOps {
     @Volatile private var ready = false
 
     /** Opens a PDF from a private copy, keeping big documents on disk instead of in memory. */
-    private fun load(context: Context, file: InputFile, password: String = ""): PDDocument {
+    internal fun load(context: Context, file: InputFile, password: String = ""): PDDocument {
         if (!ready) {
             PDFBoxResourceLoader.init(context.applicationContext)
             ready = true
@@ -43,10 +43,10 @@ object PdfOps {
         }
     }
 
-    private fun write(context: Context, doc: PDDocument, name: String, subfolder: String? = null): SavedFile =
+    internal fun write(context: Context, doc: PDDocument, name: String, subfolder: String? = null): SavedFile =
         Storage.save(context, name, "application/pdf", subfolder) { doc.save(it) }
 
-    private fun pad(i: Int, total: Int) = (i + 1).toString().padStart(total.toString().length, '0')
+    internal fun pad(i: Int, total: Int) = (i + 1).toString().padStart(total.toString().length, '0')
 
     /**
      * Pages can get fonts, pictures, size and rotation from their parent in the page tree.

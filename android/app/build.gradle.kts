@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.harismushtaq12.dragwheel"
         minSdk = 29 // Android 10: saving to Downloads needs no permission
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     signingConfigs {
@@ -75,4 +75,8 @@ dependencies {
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     // QR codes. Apache-2.0.
     implementation("com.google.zxing:core:3.5.3")
+    // Reading words from photos and scans, on the phone (model bundled, works offline).
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+    // Saving HEIC pictures.
+    implementation("androidx.heifwriter:heifwriter:1.0.0")
 }

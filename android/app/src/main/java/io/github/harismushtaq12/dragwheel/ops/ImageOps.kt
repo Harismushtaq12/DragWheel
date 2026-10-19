@@ -219,6 +219,102 @@ object ImageOps {
         }
     }
 
+    /** Windows bitmap (24-bit). Large and simple; opens in every old program. */
+    fun toBmp(context: Context, file: InputFile): SavedFile {
+        val bmp = flatten(loadLarge(context, file))
+        val w = bmp.width
+        val h = bmp.height
+        val rowSize = (w * 3 + 3) / 4 * 4
+        val dataSize = rowSize * h
+        return Storage.save(context, "${file.baseName}.bmp", "image/bmp") { out ->
+            val header = java.nio.ByteBuffer.allocate(54).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            header.put('B'.code.toByte()).put('M'.code.toByte()).putInt(54 + dataSize).putInt(0).putInt(54)
+            header.putInt(40).putInt(w).putInt(h).putShort(1).putShort(24).putInt(0).putInt(dataSize)
+                .putInt(2835).putInt(2835).putInt(0).putInt(0)
+            out.write(header.array())
+            val pixels = IntArray(w)
+            val row = ByteArray(rowSize)
+            for (y in h - 1 downTo 0) {
+                bmp.getPixels(pixels, 0, w, 0, y, w, 1)
+                for (x in 0 until w) {
+                    val c = pixels[x]
+                    row[x * 3] = (c and 0xFF).toByte()
+                    row[x * 3 + 1] = (c shr 8 and 0xFF).toByte()
+                    row[x * 3 + 2] = (c shr 16 and 0xFF).toByte()
+                }
+                out.write(row)
+            }
+        }
+    }
+
+    /** Icon file (.ico) up to 256x256, for apps, folders and websites. */
+    fun toIco(context: Context, file: InputFile, size: Int): SavedFile {
+        val src = load(context, file, maxSide = 2048)
+        val scale = minOf(size.toFloat() / src.width, size.toFloat() / src.height)
+        val icon = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val w = (src.width * scale).roundToInt().coerceAtLeast(1)
+        val h = (src.height * scale).roundToInt().coerceAtLeast(1)
+        Canvas(icon).drawBitmap(Bitmap.createScaledBitmap(src, w, h, true), (size - w) / 2f, (size - h) / 2f, Paint(Paint.FILTER_BITMAP_FLAG))
+        val png = java.io.ByteArrayOutputStream().also { icon.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        return Storage.save(context, "${file.baseName}.ico", "image/x-icon") { out ->
+            val b = java.nio.ByteBuffer.allocate(22).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            b.putShort(0).putShort(1).putShort(1)
+            b.put((if (size >= 256) 0 else size).toByte()).put((if (size >= 256) 0 else size).toByte()).put(0).put(0)
+            b.putShort(1).putShort(32).putInt(png.size).putInt(22)
+            out.write(b.array())
+            out.write(png)
+        }
+    }
+
+    /** HEIC: about half the size of JPG at the same look. Needs the phone's HEVC encoder. */
+    fun toHeic(context: Context, file: InputFile, quality: Int): SavedFile {
+        var bmp = load(context, file, maxSide = 4096)
+        // Video encoders want even sizes.
+        val w = bmp.width - bmp.width % 2
+        val h = bmp.height - bmp.height % 2
+        if (w != bmp.width || h != bmp.height) bmp = Bitmap.createBitmap(bmp, 0, 0, w.coerceAtLeast(2), h.coerceAtLeast(2))
+        val temp = java.io.File(context.cacheDir, "heic-${System.nanoTime()}.heic")
+        try {
+            val writer = androidx.heifwriter.HeifWriter.Builder(temp.absolutePath, bmp.width, bmp.height, androidx.heifwriter.HeifWriter.INPUT_MODE_BITMAP)
+                .setQuality(quality.coerceIn(1, 100))
+                .build()
+            try {
+                writer.start()
+                writer.addBitmap(bmp)
+                writer.stop(20_000)
+            } finally {
+                writer.close()
+            }
+            if (!temp.exists() || temp.length() == 0L) throw IllegalStateException("This phone cannot make HEIC files.")
+            return Storage.saveFile(context, temp, "${file.baseName}.heic", "image/heic")
+        } catch (e: IllegalStateException) {
+            throw e
+        } catch (e: Exception) {
+            throw IllegalStateException("This phone cannot make HEIC files. Try JPG or WebP.")
+        } finally {
+            temp.delete()
+        }
+    }
+
+    /** Pictures in a Word file, one after another. */
+    fun toDocx(context: Context, files: List<InputFile>): SavedFile {
+        val w = io.github.harismushtaq12.dragwheel.ops.doc.DocxWriter()
+        val maxW = w.pageWidthPt - 2 * w.marginPt
+        val maxH = w.pageHeightPt - 2 * w.marginPt - 20
+        for (f in files) {
+            val bmp = load(context, f, maxSide = 2400)
+            val png = bmp.hasAlpha()
+            val bytes = java.io.ByteArrayOutputStream().also {
+                bmp.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 90, it)
+            }.toByteArray()
+            val s = minOf(1f, maxW / (bmp.width * 0.75f), maxH / (bmp.height * 0.75f))
+            w.image(bytes, if (png) "png" else "jpeg", bmp.width * 0.75f * s, bmp.height * 0.75f * s)
+            bmp.recycle()
+        }
+        val suffix = if (files.size > 1) " (+${files.size - 1})" else ""
+        return DocOps.writeDocx(context, "${files[0].baseName}$suffix.docx", w)
+    }
+
     fun readQr(context: Context, file: InputFile): String {
         val bitmap = load(context, file, maxSide = 2000)
         val pixels = IntArray(bitmap.width * bitmap.height)

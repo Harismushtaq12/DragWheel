@@ -79,7 +79,10 @@ fun Options.num(key: String, default: Float): Float = (this[key] as? Float) ?: d
 fun Options.range(key: String): TimeRange? = this[key] as? TimeRange
 
 /** Screens that an action can open instead of running straight away. */
-enum class Editor { VIEW, IMAGE, PDF_PAGES, TEXT }
+enum class Editor { VIEW, IMAGE, PDF_PAGES, PDF_EDIT, PDF_FORM, WORD, TEXT }
+
+/** The three rings of the wheel. */
+enum class Mode(val label: String) { CONVERT("Convert"), EDIT("Edit"), TOOLS("Tools") }
 
 /** One item on the wheel. */
 class WheelAction(

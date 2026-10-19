@@ -48,7 +48,9 @@ import io.github.harismushtaq12.dragwheel.core.formatSize
 import io.github.harismushtaq12.dragwheel.core.formatTime
 import io.github.harismushtaq12.dragwheel.ops.DocOps
 import io.github.harismushtaq12.dragwheel.ops.ImageOps
+import io.github.harismushtaq12.dragwheel.ops.PdfEditOps
 import io.github.harismushtaq12.dragwheel.ops.PdfOps
+import io.github.harismushtaq12.dragwheel.core.Mode
 
 /** Opens or shares files in other apps. Implemented by the activity. */
 interface Outside {
@@ -110,6 +112,25 @@ fun DragWheelApp(vm: WheelViewModel, outside: Outside) {
                     )
                 }
             }
+            is Screen.PdfEdit -> PdfEditScreen(s.file, s.state, onBack = { vm.back() }) { marks ->
+                vm.runEditor("Saving your changes into the PDF", "Edited PDF") { c ->
+                    ActionResult(outputs = listOf(PdfEditOps.applyMarks(c, s.file, marks)))
+                }
+            }
+            is Screen.PdfForm -> FormFillScreen(s.file.name, s.state, onBack = { vm.back() }) {
+                val values = s.state.values.toMap()
+                val flatten = s.state.flatten
+                vm.runEditor("Filling in the form", "Form filled") { c ->
+                    ActionResult(outputs = listOf(PdfEditOps.fillForm(c, s.file, values, flatten)))
+                }
+            }
+            is Screen.WordEdit -> WordEditScreen(s.file.name, s.state, onBack = { vm.back() }) {
+                val texts = s.state.texts.toList()
+                val asPdf = s.state.asPdf
+                vm.runEditor("Saving your document", "Edited document") { c ->
+                    ActionResult(outputs = listOf(DocOps.saveEditedDocx(c, "${s.file.baseName} edited", s.state.editor, texts, asPdf)))
+                }
+            }
             is Screen.Result -> ResultScreen(s, vm, outside)
         }
 
@@ -159,50 +180,31 @@ private fun HomeScreen(onChoose: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.weight(0.6f))
-        Dial(
-            actions = emptyList(), toolsMode = false, working = false,
-            knobTop = "", knobMain = "Choose",
-            onPick = {}, onKnobTap = onChoose,
-            modifier = Modifier.widthIn(max = 260.dp).fillMaxWidth(),
-        )
-        Spacer(Modifier.height(28.dp))
-        Text("DragWheel", color = Palette.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-        Text(
-            "View, edit and convert files on your phone. Nothing is uploaded.",
-            color = Palette.Muted, fontSize = 15.sp, textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
-        )
-        Steps(
-            listOf(
-                "Choose a file, or share one to DragWheel from any app.",
-                "Pick what to do on the wheel. Each choice explains itself first.",
-                "Look at the result, then save it or share it.",
-            )
-        )
-        Spacer(Modifier.weight(1f))
-        PrimaryButton("Choose files", Modifier.fillMaxWidth(), onClick = onChoose)
-    }
-}
-
-@Composable
-private fun Steps(lines: List<String>) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        lines.forEachIndexed { i, line ->
-            Row(verticalAlignment = Alignment.Top) {
-                Box(
-                    Modifier
-                        .size(26.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(Palette.Segment),
-                    contentAlignment = Alignment.Center,
-                ) { Text("${i + 1}", color = Palette.Mint, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
-                Text(line, color = Palette.Text, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp, top = 3.dp))
-            }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("DragWheel", color = Palette.Text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         }
+        Text(
+            "Convert, view and edit files on your phone. Nothing is uploaded.",
+            color = Palette.Muted, fontSize = 14.sp,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Dial(
+                actions = emptyList(), mode = Mode.CONVERT, working = false,
+                knobTop = "Tap to", knobMain = "Choose file",
+                onPick = {}, onKnobTap = onChoose,
+                modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth(),
+            )
+        }
+        PrimaryButton("Choose files", Modifier.fillMaxWidth(), onClick = onChoose)
+        Text(
+            "You can also share a file to DragWheel from Photos, Files, WhatsApp or any other app.",
+            color = Palette.Muted, fontSize = 13.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
+        )
     }
 }
 
@@ -227,12 +229,12 @@ private fun WheelScreen(vm: WheelViewModel) {
         ) {
             Dial(
                 actions = vm.actions,
-                toolsMode = vm.toolsMode,
+                mode = vm.mode,
                 working = vm.working != null,
                 knobTop = if (files.size > 1) "${files.size} files" else files.firstOrNull()?.ext?.uppercase()?.ifEmpty { "File" } ?: "",
-                knobMain = if (vm.toolsMode) "Tools" else "Convert",
+                knobMain = vm.mode.label,
                 onPick = { i -> vm.actions.getOrNull(i)?.let(vm::pick) },
-                onKnobTap = { vm.setMode(!vm.toolsMode) },
+                onKnobTap = { vm.nextMode() },
                 modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth(),
             )
         }
@@ -244,11 +246,11 @@ private fun WheelScreen(vm: WheelViewModel) {
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Pill("Convert", !vm.toolsMode) { vm.setMode(false) }
-            Pill("Tools", vm.toolsMode) { vm.setMode(true) }
+            for (m in Mode.entries) Pill(m.label, vm.mode == m) { vm.setMode(m) }
         }
         Text(
-            "Tap a slice to see what it does. Nothing happens until you confirm.",
+            if (vm.actions.isEmpty()) "Nothing to ${vm.mode.label.lowercase()} for this file. Try another ring."
+            else "Tap a slice to see what it does. Nothing happens until you confirm.",
             color = Palette.Muted, fontSize = 13.sp, textAlign = TextAlign.Center,
             modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 16.dp),
         )
@@ -290,7 +292,8 @@ private fun describe(f: InputFile, info: io.github.harismushtaq12.dragwheel.core
         Catalog.Kind.VIDEO -> "Video"
         Catalog.Kind.AUDIO -> "Audio"
         Catalog.Kind.PDF -> "PDF"
-        Catalog.Kind.DOC -> if (DocOps.isDocx(f)) "Word document" else "Text document"
+        Catalog.Kind.WORD -> "Word document"
+        Catalog.Kind.TEXT -> "Text document"
         Catalog.Kind.ZIP -> "Zip archive"
         Catalog.Kind.OTHER -> f.ext.uppercase().ifEmpty { "File" }
     }

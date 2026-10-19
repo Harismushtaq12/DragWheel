@@ -34,6 +34,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.sp
+import io.github.harismushtaq12.dragwheel.core.Mode
 import io.github.harismushtaq12.dragwheel.core.WheelAction
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -53,7 +54,7 @@ private const val GAP_DEG = 1.6f
 @Composable
 fun Dial(
     actions: List<WheelAction>,
-    toolsMode: Boolean,
+    mode: Mode,
     working: Boolean,
     knobTop: String,
     knobMain: String,
@@ -128,15 +129,23 @@ fun Dial(
         val inner = outer * INNER
         val n = actions.size
 
-        drawCircle(if (toolsMode) Palette.RingTools else Palette.Ring, radius = outer, center = c)
+        drawCircle(
+            when (mode) { Mode.CONVERT -> Palette.Ring; Mode.EDIT -> Palette.RingEdit; Mode.TOOLS -> Palette.RingTools },
+            radius = outer, center = c,
+        )
 
-        val idle = if (toolsMode) Palette.SegmentTools else Palette.Segment
+        val idle = when (mode) { Mode.CONVERT -> Palette.Segment; Mode.EDIT -> Palette.SegmentEdit; Mode.TOOLS -> Palette.SegmentTools }
         val slices = if (n == 0) 6 else n
         val span = 360f / slices
-        val titleStyle = TextStyle(fontSize = if (slices > 6) 15.sp else 17.sp, fontWeight = FontWeight.SemiBold)
-        val hintStyle = TextStyle(fontSize = 11.sp)
+        val titleStyle = TextStyle(
+            fontSize = when { slices > 9 -> 12.sp; slices > 6 -> 14.sp; else -> 17.sp },
+            fontWeight = FontWeight.SemiBold,
+        )
+        val hintStyle = TextStyle(fontSize = if (slices > 8) 9.sp else 11.sp)
+        val showHints = slices <= 10
         val labelR = (outer + inner) / 2f + outer * 0.02f
-        val labelWidth = (outer * 0.62f).toInt().coerceAtLeast(1)
+        // Labels must fit their slice: narrower when there are many slices.
+        val labelWidth = minOf(outer * 0.62f, (2f * Math.PI.toFloat() * labelR / slices) * 0.95f).toInt().coerceAtLeast(1)
 
         for (i in 0 until slices) {
             val mid = -90f + i * span
@@ -158,7 +167,7 @@ fun Dial(
                 val hintColor = if (isHot) Palette.OnMint else Palette.Muted
                 val t = measurer.measure(a.title, titleStyle.copy(color = textColor), maxLines = 1,
                     overflow = TextOverflow.Ellipsis, constraints = Constraints(maxWidth = labelWidth))
-                val h = measurer.measure(a.hint, hintStyle.copy(color = hintColor), maxLines = 1,
+                val h = measurer.measure(if (showHints) a.hint else "", hintStyle.copy(color = hintColor), maxLines = 1,
                     overflow = TextOverflow.Ellipsis, constraints = Constraints(maxWidth = labelWidth))
                 val total = t.size.height + h.size.height
                 drawText(t, topLeft = Offset(x - t.size.width / 2f, y - total / 2f))

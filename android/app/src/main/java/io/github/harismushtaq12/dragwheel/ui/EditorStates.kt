@@ -45,3 +45,33 @@ class TextEditState(doc: TextDoc) {
         const val EDIT_LIMIT = 300_000
     }
 }
+
+/** Things added in the PDF editor, and which tool is in use. */
+class PdfEditState {
+    val marks = androidx.compose.runtime.mutableStateListOf<io.github.harismushtaq12.dragwheel.ops.Mark>()
+    var tool by mutableStateOf(PdfTool.EDIT_TEXT)
+    var color by mutableIntStateOf(android.graphics.Color.BLACK)
+}
+
+enum class PdfTool(val label: String, val help: String) {
+    EDIT_TEXT("Change text", "Tap a line of text to change it."),
+    ADD_TEXT("Add text", "Tap where the new text should start."),
+    DRAW("Draw / sign", "Draw with your finger. Use it to sign."),
+    HIGHLIGHT("Highlight", "Drag over text to mark it yellow."),
+    WHITE_OUT("White-out", "Drag over anything to hide it under white."),
+    MOVE("Scroll", "Scroll the pages. Nothing is changed."),
+}
+
+/** Word editor: the editable copy and the paragraph texts being edited. */
+class WordEditState(val editor: io.github.harismushtaq12.dragwheel.ops.doc.DocxEditor) {
+    val texts = androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(editor.texts) }
+    var find by mutableStateOf("")
+    var replace by mutableStateOf("")
+    var asPdf by mutableStateOf(false)
+}
+
+/** Answers typed into a PDF form. */
+class FormState(val fields: List<io.github.harismushtaq12.dragwheel.ops.FormField>) {
+    val values = androidx.compose.runtime.mutableStateMapOf<String, String>().apply { fields.forEach { put(it.name, it.value) } }
+    var flatten by mutableStateOf(false)
+}

@@ -23,10 +23,23 @@ import io.github.harismushtaq12.dragwheel.core.Storage
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+/** What the photo editor asks for. Crop values are 0..1 of the rotated image. */
+data class ImageEdit(
+    val quarterTurns: Int = 0,
+    val flip: Boolean = false,
+    val cropLeft: Float = 0f,
+    val cropTop: Float = 0f,
+    val cropRight: Float = 1f,
+    val cropBottom: Float = 1f,
+    val brightness: Float = 0f,  // -100..100
+    val contrast: Float = 1f,    // 0.5..1.5
+    val saturation: Float = 1f,  // 0..2
+)
+
 object ImageOps {
 
     /** Decodes with rotation applied. Software bitmap so we can read and draw it. */
-    private fun load(context: Context, file: InputFile, maxSide: Int = 4096): Bitmap {
+    fun load(context: Context, file: InputFile, maxSide: Int = 4096): Bitmap {
         val source = ImageDecoder.createSource(context.contentResolver, file.uri)
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
@@ -34,7 +47,10 @@ object ImageOps {
             val largest = max(info.size.width, info.size.height)
             if (largest > maxSide) {
                 val scale = maxSide.toFloat() / largest
-                decoder.setTargetSize((info.size.width * scale).roundToInt(), (info.size.height * scale).roundToInt())
+                decoder.setTargetSize(
+                    (info.size.width * scale).roundToInt().coerceAtLeast(1),
+                    (info.size.height * scale).roundToInt().coerceAtLeast(1),
+                )
             }
         }
     }
@@ -57,71 +73,135 @@ object ImageOps {
         return out
     }
 
-    private fun save(context: Context, bitmap: Bitmap, file: InputFile, ext: String, suffix: String = "", quality: Int = 90): SavedFile {
+    fun save(context: Context, bitmap: Bitmap, baseName: String, ext: String, suffix: String = "", quality: Int = 90): SavedFile {
         val image = if (ext == "jpg") flatten(bitmap) else bitmap
-        return Storage.save(context, "${file.baseName}$suffix.$ext") { out ->
-            image.compress(formatFor(ext), quality, out)
+        return Storage.save(context, "$baseName$suffix.$ext", Storage.mimeFor(ext)) { out ->
+            image.compress(formatFor(ext), quality.coerceIn(1, 100), out)
         }
     }
 
     /** Keep the format if Android can write it, otherwise JPG. */
-    private fun sameOrJpg(file: InputFile): String = when (file.ext) {
+    fun sameOrJpg(file: InputFile): String = when (file.ext) {
         "png" -> "png"
         "webp" -> "webp"
         else -> "jpg"
     }
 
-    fun convert(context: Context, file: InputFile, ext: String): SavedFile =
-        save(context, load(context, file), file, ext, quality = if (ext == "webp") 85 else 92)
+    fun convert(context: Context, file: InputFile, ext: String, quality: Int = 92): SavedFile =
+        save(context, load(context, file), file.baseName, ext, quality = quality)
 
-    fun compress(context: Context, file: InputFile): SavedFile {
-        val bitmap = load(context, file, maxSide = 2560)
+    fun compress(context: Context, file: InputFile, quality: Int, maxSide: Int): SavedFile {
+        val bitmap = load(context, file, maxSide = maxSide)
         // PNG is lossless, so the smaller choice is a JPG.
         val ext = if (file.ext == "webp") "webp" else "jpg"
-        return save(context, bitmap, file, ext, " compressed", quality = 70)
+        return save(context, bitmap, file.baseName, ext, " compressed", quality = quality)
     }
 
-    fun halfSize(context: Context, file: InputFile): SavedFile {
-        val bitmap = load(context, file)
-        val half = Bitmap.createScaledBitmap(bitmap, max(1, bitmap.width / 2), max(1, bitmap.height / 2), true)
-        if (half !== bitmap) bitmap.recycle()
-        return save(context, half, file, sameOrJpg(file), " small", quality = 88)
+    fun resize(context: Context, file: InputFile, percent: Int): SavedFile {
+        val bitmap = load(context, file, maxSide = 8192)
+        val w = max(1, bitmap.width * percent / 100)
+        val h = max(1, bitmap.height * percent / 100)
+        val scaled = Bitmap.createScaledBitmap(bitmap, w, h, true)
+        if (scaled !== bitmap) bitmap.recycle()
+        return save(context, scaled, file.baseName, sameOrJpg(file), " ${w}x$h", quality = 90)
     }
 
     fun rotate(context: Context, file: InputFile): SavedFile {
         val bitmap = load(context, file)
-        val m = Matrix().apply { postRotate(90f) }
-        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
-        if (rotated !== bitmap) bitmap.recycle()
-        return save(context, rotated, file, sameOrJpg(file), " rotated", quality = 92)
+        val rotated = transform(bitmap, 1, false)
+        return save(context, rotated, file.baseName, sameOrJpg(file), " rotated", quality = 92)
     }
 
     fun grayscale(context: Context, file: InputFile): SavedFile {
-        val bitmap = load(context, file)
-        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-        val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) }) }
-        Canvas(out).drawBitmap(bitmap, 0f, 0f, paint)
-        bitmap.recycle()
-        return save(context, out, file, sameOrJpg(file), " bw", quality = 92)
+        val out = applyColor(load(context, file), 0f, 1f, 0f)
+        return save(context, out, file.baseName, sameOrJpg(file), " bw", quality = 92)
     }
 
     /** Re-encoding writes only pixels: EXIF, GPS location and camera details are gone. */
     fun clean(context: Context, file: InputFile): SavedFile =
-        save(context, load(context, file), file, sameOrJpg(file), " clean", quality = 92)
+        save(context, load(context, file), file.baseName, sameOrJpg(file), " clean", quality = 92)
 
-    fun toPdf(context: Context, files: List<InputFile>): SavedFile {
+    /** Applies the photo editor's changes to the full picture. */
+    fun edit(context: Context, file: InputFile, e: ImageEdit, ext: String, quality: Int): SavedFile {
+        var bitmap = transform(load(context, file), e.quarterTurns, e.flip)
+        val l = (e.cropLeft.coerceIn(0f, 1f) * bitmap.width).roundToInt()
+        val t = (e.cropTop.coerceIn(0f, 1f) * bitmap.height).roundToInt()
+        val r = (e.cropRight.coerceIn(0f, 1f) * bitmap.width).roundToInt()
+        val b = (e.cropBottom.coerceIn(0f, 1f) * bitmap.height).roundToInt()
+        if (r - l >= 2 && b - t >= 2 && (l > 0 || t > 0 || r < bitmap.width || b < bitmap.height)) {
+            val cropped = Bitmap.createBitmap(bitmap, l, t, r - l, b - t)
+            if (cropped !== bitmap) bitmap.recycle()
+            bitmap = cropped
+        }
+        if (e.brightness != 0f || e.contrast != 1f || e.saturation != 1f) {
+            bitmap = applyColor(bitmap, e.saturation, e.contrast, e.brightness)
+        }
+        return save(context, bitmap, file.baseName, ext, " edited", quality = quality)
+    }
+
+    /** Turns by 90° steps clockwise and optionally mirrors. Recycles the input if it made a copy. */
+    fun transform(bitmap: Bitmap, quarterTurns: Int, flip: Boolean): Bitmap {
+        val turns = ((quarterTurns % 4) + 4) % 4
+        if (turns == 0 && !flip) return bitmap
+        val m = Matrix()
+        if (flip) m.postScale(-1f, 1f)
+        if (turns != 0) m.postRotate(90f * turns)
+        val out = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
+        if (out !== bitmap) bitmap.recycle()
+        return out
+    }
+
+    /** Same numbers as the editor preview, so what you see is what you get. */
+    fun colorMatrixValues(saturation: Float, contrast: Float, brightness: Float): FloatArray {
+        val sat = ColorMatrix().apply { setSaturation(saturation) }
+        val t = brightness + 128f * (1f - contrast)
+        val con = ColorMatrix(
+            floatArrayOf(
+                contrast, 0f, 0f, 0f, t,
+                0f, contrast, 0f, 0f, t,
+                0f, 0f, contrast, 0f, t,
+                0f, 0f, 0f, 1f, 0f,
+            )
+        )
+        sat.postConcat(con)
+        return sat.array
+    }
+
+    private fun applyColor(bitmap: Bitmap, saturation: Float, contrast: Float, brightness: Float): Bitmap {
+        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val paint = Paint().apply {
+            colorFilter = ColorMatrixColorFilter(ColorMatrix(colorMatrixValues(saturation, contrast, brightness)))
+        }
+        Canvas(out).drawBitmap(bitmap, 0f, 0f, paint)
+        bitmap.recycle()
+        return out
+    }
+
+    /** One page per picture. [a4] fits each picture on an A4 page; otherwise the page matches the picture. */
+    fun toPdf(context: Context, files: List<InputFile>, a4: Boolean): SavedFile {
         val pdf = PdfDocument()
         try {
             files.forEachIndexed { index, f ->
                 val bitmap = load(context, f, maxSide = 3000)
-                // Page size in points; long side fitted to A4 height (842 pt).
-                val scale = 842f / max(bitmap.width, bitmap.height)
-                val w = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
-                val h = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
-                val page = pdf.startPage(PdfDocument.PageInfo.Builder(w, h, index + 1).create())
-                page.canvas.drawColor(Color.WHITE)
-                page.canvas.scale(scale, scale)
-                page.canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+                val pageW: Int
+                val pageH: Int
+                val scale: Float
+                if (a4) {
+                    val portrait = bitmap.height >= bitmap.width
+                    pageW = if (portrait) 595 else 842
+                    pageH = if (portrait) 842 else 595
+                    scale = minOf((pageW - 48f) / bitmap.width, (pageH - 48f) / bitmap.height)
+                } else {
+                    scale = 842f / max(bitmap.width, bitmap.height)
+                    pageW = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
+                    pageH = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
+                }
+                val page = pdf.startPage(PdfDocument.PageInfo.Builder(pageW, pageH, index + 1).create())
+                val c = page.canvas
+                c.drawColor(Color.WHITE)
+                c.translate((pageW - bitmap.width * scale) / 2f, (pageH - bitmap.height * scale) / 2f)
+                c.scale(scale, scale)
+                c.drawBitmap(bitmap, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
                 pdf.finishPage(page)
                 bitmap.recycle()
             }
@@ -140,7 +220,7 @@ object ImageOps {
         return try {
             MultiFormatReader().decode(binary, mapOf(DecodeHintType.TRY_HARDER to true)).text
         } catch (e: NotFoundException) {
-            throw IllegalStateException("No QR code or barcode found in this image.")
+            throw IllegalStateException("No QR code or barcode found in this picture.")
         }
     }
 }

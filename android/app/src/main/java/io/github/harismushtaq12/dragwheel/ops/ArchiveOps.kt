@@ -56,6 +56,20 @@ object ArchiveOps {
         return saved
     }
 
+    /** Names and sizes inside a zip, without extracting. */
+    fun list(context: Context, file: InputFile, limit: Int = 2000): List<Pair<String, Long>> {
+        val out = mutableListOf<Pair<String, Long>>()
+        Storage.open(context, file).use { input ->
+            ZipInputStream(input).use { zip ->
+                while (out.size < limit) {
+                    val entry = try { zip.nextEntry } catch (e: ZipException) { break } ?: break
+                    if (!entry.isDirectory) out += entry.name to entry.size
+                }
+            }
+        }
+        return out
+    }
+
     fun sha256(context: Context, file: InputFile): String {
         val digest = MessageDigest.getInstance("SHA-256")
         Storage.open(context, file).use { input ->

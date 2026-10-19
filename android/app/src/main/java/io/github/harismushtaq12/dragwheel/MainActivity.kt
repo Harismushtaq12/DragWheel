@@ -8,15 +8,17 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import io.github.harismushtaq12.dragwheel.core.SavedFile
-import io.github.harismushtaq12.dragwheel.ui.DragWheelScreen
+import io.github.harismushtaq12.dragwheel.ui.DragWheelApp
 import io.github.harismushtaq12.dragwheel.ui.DragWheelTheme
+import io.github.harismushtaq12.dragwheel.ui.Outside
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), Outside {
     private val vm: WheelViewModel by viewModels()
 
     private val picker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -30,12 +32,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DragWheelTheme {
-                DragWheelScreen(
-                    vm = vm,
-                    onChooseFiles = { picker.launch(arrayOf("*/*")) },
-                    onOpen = ::open,
-                    onShare = ::share,
-                )
+                BackHandler(enabled = true) {
+                    if (!vm.back()) finish()
+                }
+                DragWheelApp(vm, this)
             }
         }
     }
@@ -69,18 +69,24 @@ class MainActivity : ComponentActivity() {
         (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
         else @Suppress("DEPRECATION") intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)) ?: emptyList()
 
-    private fun open(file: SavedFile) {
+    // ---------- Outside ----------
+
+    override fun chooseFiles() {
+        picker.launch(arrayOf("*/*"))
+    }
+
+    override fun openElsewhere(uri: Uri, mime: String, name: String) {
         val view = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(file.uri, file.mime)
+            .setDataAndType(uri, mime)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         try {
-            startActivity(view)
+            startActivity(Intent.createChooser(view, "Open $name with"))
         } catch (e: ActivityNotFoundException) {
-            Toast.makeText(this, "No app can open ${file.name}. It is in Downloads/DragWheel.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "No app on this phone can open $name.", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun share(files: List<SavedFile>) {
+    override fun share(files: List<SavedFile>) {
         if (files.isEmpty()) return
         val send = if (files.size == 1) {
             Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, files[0].uri).setType(files[0].mime)

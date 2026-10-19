@@ -18,9 +18,11 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import io.github.harismushtaq12.dragwheel.core.FileInfo
 import io.github.harismushtaq12.dragwheel.core.InputFile
 import io.github.harismushtaq12.dragwheel.core.SavedFile
 import io.github.harismushtaq12.dragwheel.core.Storage
+import io.github.harismushtaq12.dragwheel.core.TimeRange
 import java.io.File
 import java.io.IOException
 import kotlin.coroutines.resume
@@ -39,6 +41,7 @@ object MediaOps {
         removeAudio: Boolean = false,
         removeVideo: Boolean = false,
         videoEffects: List<Effect> = emptyList(),
+        clip: TimeRange? = null,
     ): SavedFile {
         val temp = File(context.cacheDir, "export-${System.nanoTime()}.mp4")
         try {
@@ -58,7 +61,16 @@ object MediaOps {
                         }
                     }).build()
 
-                    val item = EditedMediaItem.Builder(MediaItem.fromUri(file.uri))
+                    val mediaItem = MediaItem.Builder().setUri(file.uri).apply {
+                        if (clip != null) setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(clip.startMs)
+                                .setEndPositionMs(clip.endMs)
+                                .build()
+                        )
+                    }.build()
+
+                    val item = EditedMediaItem.Builder(mediaItem)
                         .setRemoveAudio(removeAudio)
                         .setRemoveVideo(removeVideo)
                         .setEffects(Effects(emptyList(), videoEffects))
@@ -77,26 +89,11 @@ object MediaOps {
     suspend fun toMp4(context: Context, file: InputFile) =
         export(context, file, "${file.baseName}.mp4")
 
-    /** Re-encodes at a lower bitrate; also scales down to 720p, but never scales small videos up. */
-    suspend fun compress(context: Context, file: InputFile): SavedFile {
-        val effects = if (displayHeight(context, file) > 720) listOf<Effect>(Presentation.createForHeight(720)) else emptyList()
-        return export(context, file, "${file.baseName} compressed.mp4", videoEffects = effects)
-    }
-
-    /** Height as the video is shown, taking phone rotation into account. 0 if unknown. */
-    private fun displayHeight(context: Context, file: InputFile): Int {
-        val r = MediaMetadataRetriever()
-        return try {
-            r.setDataSource(context, file.uri)
-            val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
-            val h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
-            val rot = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-            if (rot == 90 || rot == 270) w else h
-        } catch (e: Exception) {
-            0
-        } finally {
-            r.release()
-        }
+    /** Re-encodes at a lower bitrate and scales down to [maxHeight], never up. */
+    suspend fun compress(context: Context, file: InputFile, maxHeight: Int): SavedFile {
+        val effects = if (info(context, file).height?.let { it > maxHeight } == true)
+            listOf<Effect>(Presentation.createForHeight(maxHeight)) else emptyList()
+        return export(context, file, "${file.baseName} ${maxHeight}p.mp4", videoEffects = effects)
     }
 
     suspend fun mute(context: Context, file: InputFile) =
@@ -105,24 +102,50 @@ object MediaOps {
     suspend fun rotate(context: Context, file: InputFile) =
         export(
             context, file, "${file.baseName} rotated.mp4",
-            videoEffects = listOf(ScaleAndRotateTransformation.Builder().setRotationDegrees(270f) /* counter-clockwise, so 270 = 90° right */.build()),
+            // Media3 turns counter-clockwise, so 270 is 90° to the right.
+            videoEffects = listOf(ScaleAndRotateTransformation.Builder().setRotationDegrees(270f).build()),
         )
 
     /** Audio from a video, or any audio file, as AAC in an .m4a file. */
     suspend fun audioOnly(context: Context, file: InputFile) =
         export(context, file, "${file.baseName}.m4a", removeVideo = true)
 
-    fun firstFrame(context: Context, file: InputFile): SavedFile {
+    /** Keeps only the part between start and end. */
+    suspend fun trim(context: Context, file: InputFile, range: TimeRange, isAudio: Boolean): SavedFile {
+        require(range.endMs - range.startMs >= 500) { "Choose at least half a second." }
+        return if (isAudio) export(context, file, "${file.baseName} trimmed.m4a", removeVideo = true, clip = range)
+        else export(context, file, "${file.baseName} trimmed.mp4", clip = range)
+    }
+
+    fun firstFrame(context: Context, file: InputFile, atMs: Long = 0): SavedFile {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(context, file.uri)
-            val frame: Bitmap = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                ?: throw IOException("Could not read a frame from this video.")
+            val frame: Bitmap = retriever.getFrameAtTime(atMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: throw IOException("Could not read a picture from this video.")
             return Storage.save(context, "${file.baseName} frame.png", "image/png") {
                 frame.compress(Bitmap.CompressFormat.PNG, 100, it)
             }
         } finally {
             retriever.release()
+        }
+    }
+
+    /** Length and size as shown, taking phone rotation into account. */
+    fun info(context: Context, file: InputFile): FileInfo {
+        val r = MediaMetadataRetriever()
+        return try {
+            r.setDataSource(context, file.uri)
+            val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            val h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+            val rot = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            val d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            val turned = rot == 90 || rot == 270
+            FileInfo(size = file.size, durationMs = d, width = if (turned) h else w, height = if (turned) w else h)
+        } catch (e: Exception) {
+            FileInfo(size = file.size)
+        } finally {
+            r.release()
         }
     }
 }

@@ -1,0 +1,191 @@
+<Window x:Class="DragWheel.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DragWheel"
+        Width="860" Height="640" MinWidth="620" MinHeight="480"
+        WindowStartupLocation="CenterScreen"
+        Background="#141C25"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        Foreground="#EEF2F5">
+    <Window.Resources>
+        <SolidColorBrush x:Key="Ring" Color="#1D2733"/>
+        <SolidColorBrush x:Key="Segment" Color="#2C3A49"/>
+        <SolidColorBrush x:Key="Mint" Color="#7FE0C2"/>
+        <SolidColorBrush x:Key="OnMint" Color="#101B17"/>
+        <SolidColorBrush x:Key="Muted" Color="#9AA8B6"/>
+
+        <Style TargetType="Button">
+            <Setter Property="Foreground" Value="#EEF2F5"/>
+            <Setter Property="Background" Value="{StaticResource Segment}"/>
+            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="B" Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="B" Property="Background" Value="#3A4B5D"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="B" Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{StaticResource Mint}"/>
+            <Setter Property="Foreground" Value="{StaticResource OnMint}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="20,10"/>
+        </Style>
+        <Style x:Key="Tab" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="B" Background="Transparent" CornerRadius="16" Padding="16,6" Margin="0,0,6,0">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="B" Property="Background" Value="#EEF2F5"/>
+                                <Setter Property="Foreground" Value="#1D2733"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#EEF2F5"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,6"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="24,18,24,18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <Image x:Name="Logo" Width="30" Height="30" Margin="0,0,10,0"/>
+            <TextBlock Text="DragWheel" FontSize="24" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <TextBlock Text="  convert files on your PC. Nothing is uploaded." Foreground="{StaticResource Muted}" FontSize="13" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+        </StackPanel>
+
+        <!-- Drop zone -->
+        <Border x:Name="DropZone" Grid.Row="1" Margin="0,16,0,14" Padding="20" CornerRadius="18"
+                Background="{StaticResource Ring}" BorderBrush="{StaticResource Segment}" BorderThickness="2" AllowDrop="True">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="DropTitle" Text="Drop files here" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock Foreground="{StaticResource Muted}" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0"
+                               Text="Or anywhere: hold Shift while you drag a file, or right-click it and choose Convert with DragWheel. Use the arrow keys and Enter on the wheel."/>
+                </StackPanel>
+                <Button Grid.Column="1" Style="{StaticResource Primary}" Content="Choose files" Click="OnChoose" VerticalAlignment="Center" Margin="16,0,0,0"/>
+            </Grid>
+        </Border>
+
+        <!-- Tabs -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
+            <ToggleButton x:Name="RecentTab" Style="{StaticResource Tab}" Content="Recent" IsChecked="True" Click="OnTab"/>
+            <ToggleButton x:Name="SettingsTab" Style="{StaticResource Tab}" Content="Settings" Click="OnTab"/>
+        </StackPanel>
+
+        <!-- Recent -->
+        <Grid x:Name="RecentPanel" Grid.Row="3">
+            <TextBlock x:Name="EmptyText" Foreground="{StaticResource Muted}" FontSize="14" TextWrapping="Wrap" Margin="4"
+                       Text="Your converted files will be listed here, with buttons to open them, show them in their folder, or undo."/>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="RecentList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{StaticResource Ring}" CornerRadius="12" Padding="14,10" Margin="0,0,0,8">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding FirstOutputName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Foreground="#9AA8B6" FontSize="12">
+                                            <Run Text="{Binding Title, Mode=OneWay}"/><Run Text=", "/><Run Text="{Binding FromLine, Mode=OneWay}"/><Run Text=", "/><Run Text="{Binding When, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="Open" Margin="6,0,0,0" Click="OnOpenItem" Tag="{Binding}"/>
+                                        <Button Content="Show in folder" Margin="6,0,0,0" Click="OnShowItem" Tag="{Binding}"/>
+                                        <Button Content="Undo" Margin="6,0,0,0" Click="OnUndoItem" Tag="{Binding}" ToolTip="Delete the converted file (your original stays)"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- Settings -->
+        <ScrollViewer x:Name="SettingsPanel" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="Ways to open the wheel" FontSize="16" FontWeight="SemiBold" Margin="0,4,0,4"/>
+                <CheckBox x:Name="ShiftDrag" Content="Hold Shift while dragging a file" Click="OnSetting"/>
+                <CheckBox x:Name="ExplorerMenu" Content="Right-click menu in File Explorer: Convert with DragWheel" Click="OnSetting"/>
+                <CheckBox x:Name="SendTo" Content="Right-click, Send to, DragWheel (good for many files)" Click="OnSetting"/>
+                <CheckBox x:Name="StartWithWindows" Content="Start DragWheel when Windows starts" Click="OnSetting"/>
+                <TextBlock Foreground="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"
+                           Text="On Windows 11 the right-click entry is under Show more options."/>
+
+                <TextBlock Text="Helpers for more file types" FontSize="16" FontWeight="SemiBold" Margin="0,22,0,6"/>
+                <Grid Margin="0,4">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="ffmpeg: audio and video" FontSize="14"/>
+                        <TextBlock x:Name="FfmpegStatus" Foreground="{StaticResource Muted}" FontSize="12"/>
+                    </StackPanel>
+                    <Button x:Name="FfmpegButton" Grid.Column="1" Content="Install" Click="OnInstallFfmpeg" VerticalAlignment="Center"/>
+                </Grid>
+                <Grid Margin="0,8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Word, Excel and PowerPoint files" FontSize="14"/>
+                        <TextBlock x:Name="OfficeStatus" Foreground="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Button x:Name="OfficeButton" Grid.Column="1" Content="Install LibreOffice" Click="OnInstallOffice" VerticalAlignment="Center"/>
+                </Grid>
+                <Grid Margin="0,8">
+                    <StackPanel>
+                        <TextBlock Text="Reading text from pictures and scans" FontSize="14"/>
+                        <TextBlock x:Name="OcrStatus" Foreground="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Grid>
+                <Button Content="Check again" HorizontalAlignment="Left" Margin="0,10,0,0" Click="OnRefresh"/>
+
+                <TextBlock Text="About" FontSize="16" FontWeight="SemiBold" Margin="0,22,0,6"/>
+                <TextBlock x:Name="About" Foreground="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap"/>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Content="Help and source code" Click="OnHelp"/>
+                    <Button Content="Open error log" Margin="8,0,0,0" Click="OnLog"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

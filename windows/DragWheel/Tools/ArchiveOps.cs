@@ -97,6 +97,38 @@ namespace DragWheel.Tools
             return folder;
         }
 
+        /// <summary>RAR, 7z or tar archives repacked as a ZIP, which every computer can open.</summary>
+        public static string ToZip(string path)
+        {
+            var temp = Path.Combine(Path.GetTempPath(), "dragwheel-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(temp);
+            try
+            {
+                var options = new ExtractionOptions { ExtractFullPath = true, Overwrite = true };
+                var ext = Path.GetExtension(path).ToLowerInvariant();
+                if (ext is ".7z" or ".rar")
+                {
+                    using var archive = ArchiveFactory.Open(path);
+                    using var reader = archive.ExtractAllEntries();
+                    reader.WriteAllToDirectory(temp, options);
+                }
+                else
+                {
+                    using var stream = File.OpenRead(path);
+                    using var reader = ReaderFactory.Open(stream);
+                    while (reader.MoveToNextEntry())
+                        if (!reader.Entry.IsDirectory) reader.WriteEntryToDirectory(temp, options);
+                }
+                var output = FileOps.NextTo(path, "zip");
+                ZipFile.CreateFromDirectory(temp, output, CompressionLevel.Optimal, includeBaseDirectory: false);
+                return output;
+            }
+            finally
+            {
+                try { Directory.Delete(temp, true); } catch { }
+            }
+        }
+
         /// <summary>"report.csv.gz" becomes "report.csv" next to it.</summary>
         private static string Gunzip(string path)
         {

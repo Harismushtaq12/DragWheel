@@ -61,6 +61,12 @@ namespace DragWheel.Tools
                 "-vf", "fps=12,scale=480:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer",
                 "-loop", "0");
 
+        /// <summary>H.265 (HEVC): about half the size of H.264 at the same look.</summary>
+        public static Task<string> ToHevc(string input) =>
+            Run(input, "mp4", " (H.265)",
+                "-c:v", "libx265", "-preset", "medium", "-crf", "26", "-tag:v", "hvc1", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart");
+
         public static Task<string> CompressVideo(string input) =>
             Run(input, "mp4", " compressed",
                 "-c:v", "libx264", "-preset", "slow", "-crf", "28", "-pix_fmt", "yuv420p",

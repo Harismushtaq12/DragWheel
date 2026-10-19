@@ -14,7 +14,7 @@
     <RootNamespace>DragWheel</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\DragWheel.ico</ApplicationIcon>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Product>DragWheel</Product>
     <Description>Shift-drag any file to convert it, right on your PC.</Description>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
@@ -29,6 +29,10 @@
     <PackageReference Include="SharpCompress" Version="0.38.0" />
     <!-- QR code reading. Apache-2.0. -->
     <PackageReference Include="ZXing.Net" Version="0.16.9" />
+    <!-- Reading text, fonts and pictures from PDFs (PDF to Word). Apache-2.0. -->
+    <PackageReference Include="PdfPig" Version="0.1.9" />
+    <!-- Excel files without Excel. MIT. -->
+    <PackageReference Include="ClosedXML" Version="0.104.1" />
   </ItemGroup>
 
   <ItemGroup>

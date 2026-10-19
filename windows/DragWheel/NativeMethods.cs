@@ -39,6 +39,17 @@ namespace DragWheel
         [DllImport("kernel32.dll")]
         public static extern uint GetCurrentThreadId();
 
+        public const int ASFW_ANY = -1;
+
+        [DllImport("user32.dll")]
+        public static extern bool AllowSetForegroundWindow(int processId);
+
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern bool GetCursorPos(out POINT point);
+
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_TOOLWINDOW = 0x00000080;
         public const int WS_EX_NOACTIVATE = 0x08000000;

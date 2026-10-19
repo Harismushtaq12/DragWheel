@@ -127,6 +127,14 @@ namespace DragWheel.Tools
 
         public static string ToPdf(IReadOnlyList<string> paths)
         {
+            var suffix = paths.Count > 1 ? $" (+{paths.Count - 1})" : "";
+            var output = FileOps.NextTo(paths[0], "pdf", suffix);
+            ToPdfAt(paths, output);
+            return output;
+        }
+
+        public static void ToPdfAt(IReadOnlyList<string> paths, string output)
+        {
             using var pages = new MagickImageCollection();
             foreach (var p in paths)
             {
@@ -141,10 +149,7 @@ namespace DragWheel.Tools
                 image.Density = new Density(dpi, dpi, DensityUnit.PixelsPerInch);
                 pages.Add(image); // the collection disposes it
             }
-            var suffix = paths.Count > 1 ? $" (+{paths.Count - 1})" : "";
-            var output = FileOps.NextTo(paths[0], "pdf", suffix);
             pages.Write(output, MagickFormat.Pdf);
-            return output;
         }
 
         public static string ReadQr(string path)

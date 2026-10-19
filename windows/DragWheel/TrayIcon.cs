@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
+using DragWheel.Engines;
 
 namespace DragWheel
 {
@@ -9,28 +10,32 @@ namespace DragWheel
     internal sealed class TrayIcon : IDisposable
     {
         private readonly NotifyIcon _icon;
-        private readonly ToolStripMenuItem _startWithWindows;
         private readonly ToolStripMenuItem _ffmpegItem;
+        private readonly ToolStripMenuItem _officeItem;
 
-        public TrayIcon()
+        public TrayIcon(Action openWindow, Action chooseFiles)
         {
             var menu = new ContextMenuStrip();
 
-            menu.Items.Add(new ToolStripMenuItem("Hold Shift while dragging a file") { Enabled = false });
-            menu.Items.Add(new ToolStripMenuItem("Rest on the centre to switch to Tools") { Enabled = false });
+            var open = new ToolStripMenuItem("Open DragWheel") { Font = new Font(menu.Font, FontStyle.Bold) };
+            open.Click += (_, _) => openWindow();
+            menu.Items.Add(open);
+
+            var choose = new ToolStripMenuItem("Convert files…");
+            choose.Click += (_, _) => chooseFiles();
+            menu.Items.Add(choose);
+
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Shift-drag a file, or right-click it and choose Convert with DragWheel") { Enabled = false });
             menu.Items.Add(new ToolStripSeparator());
 
-            _startWithWindows = new ToolStripMenuItem("Start with Windows") { CheckOnClick = true, Checked = Settings.StartsWithWindows };
-            _startWithWindows.Click += (_, _) => Settings.StartsWithWindows = _startWithWindows.Checked;
-            menu.Items.Add(_startWithWindows);
-
-            _ffmpegItem = new ToolStripMenuItem("Install ffmpeg (for audio and video)");
+            _ffmpegItem = new ToolStripMenuItem("Install ffmpeg (audio and video)");
             _ffmpegItem.Click += (_, _) => Ffmpeg.InstallWithWinget();
             menu.Items.Add(_ffmpegItem);
 
-            var help = new ToolStripMenuItem("Help and source code");
-            help.Click += (_, _) => Open("https://github.com/Harismushtaq12/DragWheel");
-            menu.Items.Add(help);
+            _officeItem = new ToolStripMenuItem("Install LibreOffice (Word, Excel, PowerPoint files)");
+            _officeItem.Click += (_, _) => LibreOffice.Install();
+            menu.Items.Add(_officeItem);
 
             var log = new ToolStripMenuItem("Open error log");
             log.Click += (_, _) => Open(Log.FilePath);
@@ -44,10 +49,14 @@ namespace DragWheel
             menu.Opening += (_, _) =>
             {
                 Ffmpeg.Refresh();
-                var found = Ffmpeg.Find() != null;
-                _ffmpegItem.Text = found ? "ffmpeg is installed" : "Install ffmpeg (for audio and video)";
-                _ffmpegItem.Enabled = !found;
-                _startWithWindows.Checked = Settings.StartsWithWindows;
+                LibreOffice.Refresh();
+                bool ff = Ffmpeg.Find() != null;
+                _ffmpegItem.Text = ff ? "ffmpeg is installed" : "Install ffmpeg (audio and video)";
+                _ffmpegItem.Enabled = !ff;
+                bool lo = LibreOffice.Find() != null;
+                bool office = Office.HasWord && Office.HasExcel && Office.HasPowerPoint;
+                _officeItem.Text = lo ? "LibreOffice is installed" : office ? "Microsoft Office is used for documents" : "Install LibreOffice (Word, Excel, PowerPoint files)";
+                _officeItem.Enabled = !lo && !office;
             };
 
             _icon = new NotifyIcon
@@ -57,6 +66,7 @@ namespace DragWheel
                 ContextMenuStrip = menu,
                 Visible = true
             };
+            _icon.DoubleClick += (_, _) => openWindow();
         }
 
         public void Notify(string title, string text, bool isError = false)

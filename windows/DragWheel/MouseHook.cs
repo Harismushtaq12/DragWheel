@@ -23,6 +23,7 @@ namespace DragWheel
 
         public event Action<int, int>? ShiftDragStarted;
         public event Action? LeftButtonReleased;
+        public event Action<int, int>? LeftButtonPressed;
 
         private readonly Dispatcher _dispatcher;
         private readonly LowLevelMouseProc _proc; // keep a reference so the GC does not collect it
@@ -93,6 +94,10 @@ namespace DragWheel
                         _startX = info.pt.X;
                         _startY = info.pt.Y;
                         _ignore = IsOwnWindow(info.pt);
+                        {
+                            int px = info.pt.X, py = info.pt.Y;
+                            _dispatcher.InvokeAsync(() => LeftButtonPressed?.Invoke(px, py));
+                        }
                         break;
 
                     case WM_MOUSEMOVE:

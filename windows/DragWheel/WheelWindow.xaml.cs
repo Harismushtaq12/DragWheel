@@ -57,6 +57,12 @@ namespace DragWheel
         private int _targetX;
         private int _targetY;
 
+        /// <summary>
+        /// Click mode: opened from the right-click menu, Send to, or the app window.
+        /// The wheel takes focus and works with mouse clicks and the keyboard.
+        /// </summary>
+        private bool _clickMode;
+
         private readonly List<Path> _segments = new();
         private readonly List<TextBlock> _titles = new();
         private readonly List<TextBlock> _hints = new();
@@ -89,12 +95,12 @@ namespace DragWheel
                 }
             };
 
-            SourceInitialized += (_, _) =>
-            {
-                var hwnd = new WindowInteropHelper(this).Handle;
-                int style = GetWindowLong(hwnd, GWL_EXSTYLE);
-                SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
-            };
+            SourceInitialized += (_, _) => SetNoActivate(true);
+
+            MouseMove += OnMouseMoveClick;
+            MouseLeftButtonUp += OnMouseUpClick;
+            PreviewKeyDown += OnKey;
+            Deactivated += (_, _) => { if (_clickMode) HideWheel(); };
             DpiChanged += (_, _) => Dispatcher.InvokeAsync(PlaceAtTarget);
 
             DragEnter += OnDragEnter;
@@ -106,6 +112,8 @@ namespace DragWheel
         /// <summary>Called when a Shift-drag starts. Shows a nearly invisible wheel under the cursor.</summary>
         public void Arm(int x, int y)
         {
+            if (_clickMode) HideWheel();
+            SetNoActivate(true);
             _targetX = x;
             _targetY = y;
             _files = Array.Empty<string>();
@@ -139,14 +147,118 @@ namespace DragWheel
 
         public void MouseReleased()
         {
-            if (!_shown) return;
+            if (!_shown || _clickMode) return;
             // The drop arrives slightly after the button is released.
             _hideTimer.Stop();
             _hideTimer.Start();
         }
 
+        /// <summary>Shows the wheel for files chosen another way (right-click menu, Send to, app window).</summary>
+        public void ShowFor(string[] files, int x, int y)
+        {
+            if (files.Length == 0) return;
+            HideWheel();
+            _clickMode = true;
+            _targetX = x;
+            _targetY = y;
+            _files = files;
+            _gotFiles = true;
+            _toolsMode = false;
+            _knobArmed = true;
+            _active = -1;
+            _actions = Catalog.For(_files, _toolsMode);
+            Build();
+            Root.BeginAnimation(OpacityProperty, null);
+            Root.Opacity = 1;
+            SetNoActivate(false);
+            Show();
+            _shown = true;
+            PlaceAtTarget();
+            var hwnd = new WindowInteropHelper(this).Handle;
+            SetForegroundWindow(hwnd);
+            Activate();
+            Focus();
+        }
+
+        /// <summary>Called on any left click on the screen: a click outside the wheel closes it.</summary>
+        public void ScreenClicked(int x, int y)
+        {
+            if (!_clickMode || !_shown) return;
+            var hwnd = new WindowInteropHelper(this).Handle;
+            GetWindowRect(hwnd, out var r);
+            double cx = (r.Left + r.Right) / 2.0, cy = (r.Top + r.Bottom) / 2.0;
+            double radius = (r.Right - r.Left) / 2.0 * (OuterR / Center);
+            if (Math.Pow(x - cx, 2) + Math.Pow(y - cy, 2) > radius * radius) HideWheel();
+        }
+
+        private void SetNoActivate(bool on)
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+            int style = GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TOOLWINDOW;
+            style = on ? style | WS_EX_NOACTIVATE : style & ~WS_EX_NOACTIVATE;
+            SetWindowLong(hwnd, GWL_EXSTYLE, style);
+        }
+
+        // ---------- Click and keyboard ----------
+
+        private void OnMouseMoveClick(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (!_clickMode) return;
+            var p = e.GetPosition(Root);
+            double dx = p.X - Center, dy = p.Y - Center;
+            double d = Math.Sqrt(dx * dx + dy * dy);
+            SetActive(d >= InnerR && d <= OuterR + 10 && _actions.Count > 0 ? IndexAt(dx, dy) : -1);
+        }
+
+        private void OnMouseUpClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (!_clickMode) return;
+            var p = e.GetPosition(Root);
+            double dx = p.X - Center, dy = p.Y - Center;
+            double d = Math.Sqrt(dx * dx + dy * dy);
+            if (d < InnerR) ToggleMode();
+            else if (d <= OuterR + 10 && _actions.Count > 0) Pick(IndexAt(dx, dy));
+            else HideWheel();
+        }
+
+        private void OnKey(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (!_clickMode) return;
+            int n = _actions.Count;
+            switch (e.Key)
+            {
+                case System.Windows.Input.Key.Escape: HideWheel(); break;
+                case System.Windows.Input.Key.Tab: ToggleMode(); break;
+                case System.Windows.Input.Key.Right:
+                case System.Windows.Input.Key.Down:
+                    if (n > 0) SetActive(_active < 0 ? 0 : (_active + 1) % n);
+                    break;
+                case System.Windows.Input.Key.Left:
+                case System.Windows.Input.Key.Up:
+                    if (n > 0) SetActive(_active <= 0 ? n - 1 : _active - 1);
+                    break;
+                case System.Windows.Input.Key.Enter:
+                case System.Windows.Input.Key.Space:
+                    if (_active >= 0) Pick(_active);
+                    break;
+                default: return;
+            }
+            e.Handled = true;
+        }
+
+        private void Pick(int index)
+        {
+            if (index < 0 || index >= _actions.Count) return;
+            var action = _actions[index];
+            var files = _files;
+            HideWheel();
+            Dispatcher.InvokeAsync(() => ActionPicked?.Invoke(action, files));
+        }
+
         private void HideWheel()
         {
+            _clickMode = false;
             _armTimer.Stop();
             _knobTimer.Stop();
             _hideTimer.Stop();
@@ -245,7 +357,7 @@ namespace DragWheel
         {
             if (!_gotFiles) return;
             _toolsMode = !_toolsMode;
-            _knobArmed = false; // must leave the knob before it can switch again
+            _knobArmed = _clickMode; // dragging: must leave the knob before it can switch again
             _actions = Catalog.For(_files, _toolsMode);
             _active = -1;
             Build();
@@ -284,9 +396,13 @@ namespace DragWheel
             int n = _actions.Count;
             if (n > 0)
             {
-                bool ffmpegMissing = _actions.Any(a => a.NeedsFfmpeg) && Ffmpeg.Find() == null;
+                bool ffmpegMissing = _actions.Any(a => a.Engine == Engine.Ffmpeg) && Ffmpeg.Find() == null;
+                bool officeMissing = _actions.Any(a => a.Engine == Engine.Office) && _files.Length > 0 &&
+                    Tools.OfficeOps.FamilyOf(_files[0]) is { } fam && !Tools.OfficeOps.CanConvert(fam);
                 double span = 360.0 / n;
                 double labelR = (OuterR + InnerR) / 2 + 4;
+                // Labels must fit their slice: smaller when there are many slices.
+                double labelW = Math.Min(92, 2 * Math.PI * labelR / n * 0.95);
                 for (int i = 0; i < n; i++)
                 {
                     double mid = -90 + i * span;
@@ -308,22 +424,24 @@ namespace DragWheel
                     {
                         Text = action.Title,
                         FontFamily = UiFont,
-                        FontSize = action.Title.Length <= 5 ? 17 : 13.5,
+                        FontSize = n > 9 ? 12 : n > 8 ? 13 : action.Title.Length <= 5 ? 17 : 13.5,
                         FontWeight = FontWeights.SemiBold,
                         Foreground = TextLight,
                         TextAlignment = TextAlignment.Center,
-                        Width = 92,
+                        Width = labelW,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                         IsHitTestVisible = false
                     };
                     var hint = new TextBlock
                     {
-                        Text = action.NeedsFfmpeg && ffmpegMissing ? "needs ffmpeg" : action.Hint,
+                        Text = action.Engine == Engine.Ffmpeg && ffmpegMissing ? "needs ffmpeg"
+                            : action.Engine == Engine.Office && officeMissing ? "needs Office"
+                            : n > 10 ? "" : action.Hint,
                         FontFamily = UiFont,
-                        FontSize = 10.5,
+                        FontSize = n > 8 ? 9.5 : 10.5,
                         Foreground = TextMuted,
                         TextAlignment = TextAlignment.Center,
-                        Width = 92,
+                        Width = labelW,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                         IsHitTestVisible = false
                     };
@@ -335,7 +453,7 @@ namespace DragWheel
                     double x = Center + labelR * Math.Cos(rad);
                     double y = Center + labelR * Math.Sin(rad);
                     if (n == 1) { x = Center; y = Center - labelR; }
-                    Canvas.SetLeft(stack, x - 46);
+                    Canvas.SetLeft(stack, x - labelW / 2);
                     Canvas.SetTop(stack, y - 19);
                     Root.Children.Add(stack);
                     _titles.Add(title);
@@ -358,7 +476,8 @@ namespace DragWheel
             var knobStack = new StackPanel { Width = KnobR * 2 - 12, IsHitTestVisible = false };
             _knobTop = KnobLine(SourceLabel(), 11, KnobMuted, FontWeights.Normal);
             _knobMain = KnobLine(ModeLabel(), 16, KnobText, FontWeights.Bold);
-            _knobBottom = KnobLine(_gotFiles ? (_toolsMode ? "hold here to convert" : "hold here for tools") : "",
+            _knobBottom = KnobLine(!_gotFiles ? "" : _clickMode ? (_toolsMode ? "click: convert" : "click: tools")
+                : (_toolsMode ? "hold here to convert" : "hold here for tools"),
                 9.5, KnobMuted, FontWeights.Normal);
             knobStack.Children.Add(_knobTop);
             knobStack.Children.Add(_knobMain);
@@ -452,7 +571,7 @@ namespace DragWheel
 
             int x = Math.Max(work.Left, Math.Min(_targetX - w / 2, work.Right - w));
             int y = Math.Max(work.Top, Math.Min(_targetY - h / 2, work.Bottom - h));
-            SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | (_clickMode ? 0u : SWP_NOACTIVATE));
         }
     }
 }

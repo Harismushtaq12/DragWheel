@@ -16,15 +16,20 @@ namespace DragWheel.Tools
 
         public static string Merge(IReadOnlyList<string> paths)
         {
+            var target = FileOps.NextTo(paths[0], "pdf", " merged");
+            MergeTo(paths, target);
+            return target;
+        }
+
+        public static void MergeTo(IReadOnlyList<string> paths, string target)
+        {
             using var output = new PdfDocument();
             foreach (var p in paths)
             {
                 using var input = Import(p);
                 foreach (var page in input.Pages) output.AddPage(page);
             }
-            var target = FileOps.NextTo(paths[0], "pdf", " merged");
             output.Save(target);
-            return target;
         }
 
         public static string Split(string path)
@@ -82,12 +87,12 @@ namespace DragWheel.Tools
         }
 
         /// <summary>Renders every page to an image with the PDF engine built into Windows.</summary>
-        public static async Task<string> RenderPages(string path, bool png)
+        public static async Task<string> RenderPages(string path, bool png, string? folderOverride = null)
         {
             var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
             var doc = await WinPdf.PdfDocument.LoadFromFileAsync(file);
 
-            var folder = FileOps.FolderNextTo(path, " images");
+            var folder = folderOverride ?? FileOps.FolderNextTo(path, " images");
             Directory.CreateDirectory(folder);
             var ext = png ? "png" : "jpg";
             int digits = doc.PageCount.ToString().Length;

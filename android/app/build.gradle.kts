@@ -16,12 +16,24 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        // One fixed key for the GitHub builds, so each new APK installs over the old one.
+        // It is public on purpose (for sideloading only). Use a private key for Google Play.
+        create("sideload") {
+            storeFile = rootProject.file("keystore/dragwheel-sideload.jks")
+            storePassword = "dragwheel-sideload"
+            keyAlias = "dragwheel"
+            keyPassword = "dragwheel-sideload"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so the CI build installs directly.
-            // Replace with your own key before publishing on Google Play.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("sideload")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("sideload")
         }
     }
 

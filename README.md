@@ -88,7 +88,8 @@ cd android
 - Windows: the wheel holds up to 8 slices. Apps running as administrator cannot drop onto it (a Windows rule).
 - Windows: the .exe is not code-signed, so SmartScreen warns on first run.
 - Android: audio can only be converted to M4A, because Android has no built-in MP3 encoder.
-- Android: the APK is signed with a debug key. Use your own key before publishing on Google Play.
+- Android: the APK is signed with a public sideload key (`android/keystore`), so updates install over each other. Use a private key before publishing on Google Play.
+- Android: if your phone says "App not installed", uninstall any older DragWheel first, then install again.
 
 ## Privacy
 
